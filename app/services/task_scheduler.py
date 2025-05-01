@@ -566,7 +566,7 @@ class TaskScheduler:
     def get_stats(self):
         """
         获取任务统计信息
-        返回各种状态任务的数量统计
+        返回各种状态任务的数量统计和最近7天的任务统计
         """
         with self.lock:
             stats = {'total': len(self.tasks), 'scheduled': 0, 'running': 0, 'completed': 0, 'failed': 0}
@@ -603,6 +603,75 @@ class TaskScheduler:
                 stats['success_rate'] = (completed_count / total_executed) * 100
             else:
                 stats['success_rate'] = 0
+
+            # 添加最近7天的任务统计数据
+            today = datetime.now()
+            last_7_days = []
+
+            # 计算最近7天的日期
+            for i in range(6, -1, -1):  # 从6到0，代表前6天到今天
+                day = today - timedelta(days=i)
+                day_str = day.strftime('%Y-%m-%d')
+                last_7_days.append(day_str)
+
+            # 统计每天的成功和失败任务数
+            success_counts = [0] * 7
+            failed_counts = [0] * 7
+
+            # 遍历所有任务历史记录
+            for task_id, executions in self.task_history.items():
+                for execution in executions:
+                    # 获取执行开始时间
+                    start_time_str = execution.get('start_time')
+                    if not start_time_str:
+                        continue
+
+                    try:
+                        start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M:%S')
+                        start_date = start_time.strftime('%Y-%m-%d')
+
+                        # 如果在最近7天内
+                        if start_date in last_7_days:
+                            day_index = last_7_days.index(start_date)
+                            status = execution.get('status')
+
+                            if status == 'completed':
+                                success_counts[day_index] += 1
+                            elif status == 'failed':
+                                failed_counts[day_index] += 1
+                    except (ValueError, TypeError):
+                        continue
+
+            # 添加到统计结果中
+            stats['last_7_days'] = {
+                'dates': last_7_days,
+                'success_counts': success_counts,
+                'failed_counts': failed_counts
+            }
+
+            # 添加最近任务执行情况（前5条）
+            recent_tasks = []
+            all_executions = []
+
+            for task_id, executions in self.task_history.items():
+                task = next((t for t in self.tasks if t.get('task_id') == task_id), None)
+                if not task:
+                    continue
+
+                for execution in executions:
+                    all_executions.append({
+                        'task_id': task_id,
+                        'name': task.get('task_name', f"Task-{task_id}"),
+                        'status': execution.get('status', 'unknown'),
+                        'start_time': execution.get('start_time'),
+                        'end_time': execution.get('end_time'),
+                        'duration': execution.get('duration')
+                    })
+
+            # 按开始时间排序，取最近的5条
+            all_executions.sort(key=lambda x: x.get('start_time', ''), reverse=True)
+            recent_tasks = all_executions[:5]
+            stats['recent_tasks'] = recent_tasks
 
             return stats
 
@@ -650,3 +719,81 @@ class TaskScheduler:
         self.running = False
         if self.scheduler_thread.is_alive():
             self.scheduler_thread.join(timeout=5)
+
+    def stop_task(self, task_id):
+        """停止正在运行的任务
+        
+        参数:
+            task_id: 任务ID
+            
+        返回:
+            包含操作结果的字典
+        """
+        with self.lock:
+            # 查找任务
+            task = next((t for t in self.tasks if t.get('task_id') == task_id), None)
+            if not task:
+                return {"success": False, "message": f"Task with ID {task_id} not found"}
+
+            # 检查任务状态
+            if task['status'] != 'running':
+                return {
+                    "success": False,
+                    "message": "Task is not in a running state",
+                    "error": f"Cannot stop a task with status: '{task['status']}'",
+                    "current_status": task['status']
+                }
+
+            previous_status = task['status']
+
+            # 如果任务正在运行，尝试终止它
+            if task.get('last_execution_id'):
+                # 查找最近一次执行的记录
+                history_record = next((h for h in self.task_history.get(task_id, [])
+                                       if h.get('execution_id') == task.get('last_execution_id')), None)
+
+                if history_record and history_record.get('status') == 'running':
+                    try:
+                        # 更新执行记录和任务状态
+                        task['status'] = 'stopped'
+                        history_record['status'] = 'stopped'
+                        history_record['end_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                        # 如果任务有关联的进程，尝试终止
+                        # 注意：这里假设最近的任务ID对应于运行中的进程，实际应用可能需要记录进程ID
+                        # 根据命令找到对应的进程PID
+                        command = f"conda run -n {task['conda_env']} python {task['script_path']}"
+                        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                            if proc.info['cmdline'] and command in ' '.join(proc.info['cmdline']):
+                                try:
+                                    proc.terminate()  # 发送终止信号
+                                    history_record['logs'] += "\nTask was stopped manually."
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
+
+                        return {
+                            "success": True,
+                            "message": "Task stopped successfully",
+                            "task": {
+                                "task_id": task_id,
+                                "task_name": task.get('task_name'),
+                                "status": 'stopped',
+                                "previous_status": previous_status
+                            }
+                        }
+                    except Exception as e:
+                        return {"success": False, "message": f"Failed to stop task: {str(e)}", "error": str(e)}
+
+            # 如果没有找到对应的执行记录，但任务状态是running
+            # 仍然更新任务状态为stopped
+            task['status'] = 'stopped'
+            return {
+                "success": True,
+                "message": "Task marked as stopped",
+                "task": {
+                    "task_id": task_id,
+                    "task_name": task.get('task_name'),
+                    "status": 'stopped',
+                    "previous_status": previous_status
+                }
+            }

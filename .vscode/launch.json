@@ -10,7 +10,7 @@
             "request": "launch",
             "module": "app",
             "console": "internalConsole",
-            "preLaunchTask": "npm: build"
+            // "preLaunchTask": "npm: build"
         }
     ]
 }

@@ -2,8 +2,27 @@ import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
     fetchEnvironmentsRequest,
+    fetchEnvStatsRequest,
+    fetchEnvDetailsRequest,
     createEnvironmentRequest,
-    deleteEnvironmentRequest
+    deleteEnvironmentRequest,
+    renameEnvironmentRequest,
+    installPackagesRequest,
+    removePackagesRequest,
+    showCreateModal,
+    hideCreateModal,
+    setNewEnvName,
+    showDetailsModal,
+    hideDetailsModal,
+    showEditModal,
+    hideEditModal,
+    setEditEnvName,
+    showInstallPackagesModal,
+    hideInstallPackagesModal,
+    setNewPackages,
+    showRemovePackagesModal,
+    hideRemovePackagesModal,
+    setSelectedPackages
 } from '../redux/conda/reducer';
 import {
     CButton,
@@ -31,15 +50,28 @@ import CIcon from '@coreui/icons-react';
 
 const CondaManager = () => {
     const dispatch = useDispatch();
-    const { environments, loading, error } = useSelector(state => state.conda);
-    const [visible, setVisible] = useState(false);
-    const [newEnvName, setNewEnvName] = useState('');
-    const [selectedEnv, setSelectedEnv] = useState(null);
-    const [detailsVisible, setDetailsVisible] = useState(false);
+    const {
+        environments,
+        envStats,
+        envDetails,
+        loading,
+        error,
+        createModalVisible,
+        newEnvName,
+        selectedEnv,
+        detailsModalVisible,
+        editModalVisible,
+        editEnvName,
+        installPackagesModalVisible,
+        newPackages,
+        removePackagesModalVisible,
+        selectedPackages
+    } = useSelector(state => state.conda);
 
     useEffect(() => {
-        // 分发获取环境列表请求action
+        // 分发获取环境列表和统计信息请求action
         dispatch(fetchEnvironmentsRequest());
+        dispatch(fetchEnvStatsRequest());
     }, [dispatch]);
 
     const handleCreateEnvironment = () => {
@@ -47,8 +79,7 @@ const CondaManager = () => {
 
         // 分发创建环境请求action
         dispatch(createEnvironmentRequest({ name: newEnvName }));
-        setNewEnvName('');
-        setVisible(false);
+        dispatch(hideCreateModal());
     };
 
     const handleDeleteEnvironment = (envId) => {
@@ -58,26 +89,64 @@ const CondaManager = () => {
         dispatch(deleteEnvironmentRequest({ envId }));
     };
 
+    const handleRenameEnvironment = () => {
+        if (!editEnvName.trim() || !selectedEnv) return;
+
+        // 分发重命名环境请求action
+        dispatch(renameEnvironmentRequest({ envId: selectedEnv.env_id, newName: editEnvName }));
+        dispatch(hideEditModal());
+    };
+
+    const handleInstallPackages = () => {
+        if (!newPackages.trim() || !selectedEnv) return;
+
+        // 将输入的包名按行或逗号分割转换为数组
+        const packagesArray = newPackages
+            .split(/[\n,]+/)
+            .map(pkg => pkg.trim())
+            .filter(pkg => pkg);
+
+        if (packagesArray.length === 0) return;
+
+        // 分发安装包请求action
+        dispatch(installPackagesRequest({
+            envId: selectedEnv.env_id,
+            packages: packagesArray
+        }));
+
+        dispatch(hideInstallPackagesModal());
+    };
+
+    const handleRemovePackages = () => {
+        if (!selectedPackages.length || !selectedEnv) return;
+
+        // 分发删除包请求action
+        dispatch(removePackagesRequest({
+            envId: selectedEnv.env_id,
+            packages: selectedPackages
+        }));
+
+        dispatch(hideRemovePackagesModal());
+    };
+
     const openDetails = (env) => {
-        setSelectedEnv(env);
-        setDetailsVisible(true);
+        dispatch(showDetailsModal(env));
+        dispatch(fetchEnvDetailsRequest({ envId: env.env_id }));
+    };
+
+    const openEdit = (env) => {
+        dispatch(showEditModal(env));
     };
 
     // 为环境使用情况准备饼图数据
     const prepareEnvUsageChart = () => {
-        if (environments.length === 0) return null;
-
-        // 模拟数据，实际应从API获取
-        const usageData = environments.map(env => ({
-            name: env.name,
-            usage: Math.floor(Math.random() * 100)
-        }));
+        if (!envStats || !envStats.environment_usage || envStats.environment_usage.length === 0) return null;
 
         return {
-            labels: usageData.map(item => item.name),
+            labels: envStats.environment_usage.map(item => item.name),
             datasets: [
                 {
-                    data: usageData.map(item => item.usage),
+                    data: envStats.environment_usage.map(item => item.usage_percent),
                     backgroundColor: [
                         '#4BC0C0', '#FF6384', '#36A2EB', '#FFCE56', '#9966FF',
                         '#FF9F40', '#2EB85C', '#3399FF', '#E55353', '#F9B115'
@@ -89,21 +158,15 @@ const CondaManager = () => {
 
     // 为环境包数量准备柱状图数据
     const preparePackagesChart = () => {
-        if (environments.length === 0) return null;
-
-        // 模拟数据，实际应从API获取
-        const packageData = environments.map(env => ({
-            name: env.name,
-            packages: Math.floor(Math.random() * 50) + 10
-        }));
+        if (!envStats || !envStats.package_stats || envStats.package_stats.length === 0) return null;
 
         return {
-            labels: packageData.map(item => item.name),
+            labels: envStats.package_stats.map(item => item.name),
             datasets: [
                 {
                     label: '已安装包数量',
                     backgroundColor: '#36A2EB',
-                    data: packageData.map(item => item.packages),
+                    data: envStats.package_stats.map(item => item.package_count),
                 }
             ]
         };
@@ -123,7 +186,7 @@ const CondaManager = () => {
                     <CCard className="mb-4 text-center">
                         <CCardBody>
                             <CCardTitle component="h5">总环境数</CCardTitle>
-                            <div className="h1 mt-3 mb-2">{environments.length}</div>
+                            <div className="h1 mt-3 mb-2">{envStats?.total_environments || environments.length}</div>
                         </CCardBody>
                     </CCard>
                 </CCol>
@@ -132,8 +195,7 @@ const CondaManager = () => {
                         <CCardBody>
                             <CCardTitle component="h5">活跃环境</CCardTitle>
                             <div className="h1 mt-3 mb-2 text-success">
-                                {/* 模拟数据 */}
-                                {Math.min(environments.length, Math.floor(Math.random() * environments.length) + 1)}
+                                {envStats?.active_environments || 0}
                             </div>
                         </CCardBody>
                     </CCard>
@@ -143,8 +205,7 @@ const CondaManager = () => {
                         <CCardBody>
                             <CCardTitle component="h5">磁盘使用</CCardTitle>
                             <div className="h1 mt-3 mb-2 text-info">
-                                {/* 模拟数据 */}
-                                {Math.floor(Math.random() * 10) + 1} GB
+                                {envStats?.total_disk_usage ? `${envStats.total_disk_usage} GB` : '0 GB'}
                             </div>
                         </CCardBody>
                     </CCard>
@@ -154,8 +215,7 @@ const CondaManager = () => {
                         <CCardBody>
                             <CCardTitle component="h5">最近创建</CCardTitle>
                             <div className="h1 mt-3 mb-2 text-warning">
-                                {/* 显示最近创建的环境名称 */}
-                                {environments.length > 0 ? environments[environments.length - 1].name : '-'}
+                                {envStats?.latest_created?.name || (environments.length > 0 ? environments[environments.length - 1].name : '-')}
                             </div>
                         </CCardBody>
                     </CCard>
@@ -221,7 +281,7 @@ const CondaManager = () => {
             <CCard>
                 <CCardHeader className="d-flex justify-content-between align-items-center">
                     <h5 className="mb-0">环境列表</h5>
-                    <CButton color="primary" onClick={() => setVisible(true)}>
+                    <CButton color="primary" onClick={() => dispatch(showCreateModal())}>
                         <CIcon icon={cilPlus} className="me-2" />
                         创建新环境
                     </CButton>
@@ -240,43 +300,45 @@ const CondaManager = () => {
                         </thead>
                         <tbody>
                             {environments.length > 0 ? (
-                                environments.map((env) => (
-                                    <tr key={env.env_id}>
-                                        <td>{env.env_id}</td>
-                                        <td>{env.name}</td>
-                                        <td>
-                                            <CBadge color="success">活跃</CBadge>
-                                        </td>
-                                        <td>
-                                            {/* 模拟Python版本 */}
-                                            {`3.${Math.floor(Math.random() * 3) + 8}.${Math.floor(Math.random() * 10)}`}
-                                        </td>
-                                        <td>
-                                            {/* 模拟使用率 */}
-                                            <div className="d-flex align-items-center">
-                                                <div className="me-2" style={{ width: '60%' }}>
-                                                    <CProgress
-                                                        value={Math.floor(Math.random() * 100)}
-                                                        color="info"
-                                                        height={8}
-                                                    />
+                                environments.map((env) => {
+                                    // 查找环境在统计数据中的使用率
+                                    const usageData = envStats?.environment_usage?.find(item => item.name === env.name);
+                                    const usagePercent = usageData ? usageData.usage_percent : 0;
+
+                                    return (
+                                        <tr key={env.env_id}>
+                                            <td>{env.env_id}</td>
+                                            <td>{env.name}</td>
+                                            <td>
+                                                <CBadge color="success">活跃</CBadge>
+                                            </td>
+                                            <td>{env.python_version || '未知'}</td>
+                                            <td>
+                                                <div className="d-flex align-items-center">
+                                                    <div className="me-2" style={{ width: '60%' }}>
+                                                        <CProgress
+                                                            value={usagePercent}
+                                                            color="info"
+                                                            height={8}
+                                                        />
+                                                    </div>
+                                                    <small>{usagePercent}%</small>
                                                 </div>
-                                                <small>{Math.floor(Math.random() * 100)}%</small>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <CButton color="info" size="sm" className="me-2" onClick={() => openDetails(env)}>
-                                                <CIcon icon={cilInfo} />
-                                            </CButton>
-                                            <CButton color="warning" size="sm" className="me-2">
-                                                <CIcon icon={cilPencil} />
-                                            </CButton>
-                                            <CButton color="danger" size="sm" onClick={() => handleDeleteEnvironment(env.env_id)}>
-                                                <CIcon icon={cilTrash} />
-                                            </CButton>
-                                        </td>
-                                    </tr>
-                                ))
+                                            </td>
+                                            <td>
+                                                <CButton color="info" size="sm" className="me-2" onClick={() => openDetails(env)}>
+                                                    <CIcon icon={cilInfo} />
+                                                </CButton>
+                                                <CButton color="warning" size="sm" className="me-2" onClick={() => openEdit(env)}>
+                                                    <CIcon icon={cilPencil} />
+                                                </CButton>
+                                                <CButton color="danger" size="sm" onClick={() => handleDeleteEnvironment(env.env_id)}>
+                                                    <CIcon icon={cilTrash} />
+                                                </CButton>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
                             ) : (
                                 <tr>
                                     <td colSpan="6" className="text-center">
@@ -290,8 +352,8 @@ const CondaManager = () => {
             </CCard>
 
             {/* 创建环境模态框 */}
-            <CModal visible={visible} onClose={() => setVisible(false)}>
-                <CModalHeader onClose={() => setVisible(false)}>
+            <CModal visible={createModalVisible} onClose={() => dispatch(hideCreateModal())}>
+                <CModalHeader onClose={() => dispatch(hideCreateModal())}>
                     <CModalTitle>创建新Conda环境</CModalTitle>
                 </CModalHeader>
                 <CModalBody>
@@ -300,13 +362,13 @@ const CondaManager = () => {
                         <CFormInput
                             type="text"
                             value={newEnvName}
-                            onChange={(e) => setNewEnvName(e.target.value)}
+                            onChange={(e) => dispatch(setNewEnvName(e.target.value))}
                             placeholder="输入环境名称"
                         />
                     </div>
                 </CModalBody>
                 <CModalFooter>
-                    <CButton color="secondary" onClick={() => setVisible(false)}>
+                    <CButton color="secondary" onClick={() => dispatch(hideCreateModal())}>
                         取消
                     </CButton>
                     <CButton color="primary" onClick={handleCreateEnvironment}>
@@ -316,28 +378,28 @@ const CondaManager = () => {
             </CModal>
 
             {/* 环境详情模态框 */}
-            <CModal visible={detailsVisible} onClose={() => setDetailsVisible(false)} size="lg">
-                <CModalHeader onClose={() => setDetailsVisible(false)}>
+            <CModal visible={detailsModalVisible} onClose={() => dispatch(hideDetailsModal())} size="lg">
+                <CModalHeader onClose={() => dispatch(hideDetailsModal())}>
                     <CModalTitle>环境详情: {selectedEnv?.name}</CModalTitle>
                 </CModalHeader>
                 <CModalBody>
-                    {selectedEnv && (
+                    {selectedEnv && envDetails && (
                         <CCard>
                             <CCardBody>
                                 <CRow>
                                     <CCol md={6}>
                                         <h6>基本信息</h6>
-                                        <p><strong>环境ID:</strong> {selectedEnv.env_id}</p>
-                                        <p><strong>环境名称:</strong> {selectedEnv.name}</p>
-                                        <p><strong>Python版本:</strong> 3.9.7</p>
-                                        <p><strong>创建日期:</strong> 2025-04-15</p>
+                                        <p><strong>环境ID:</strong> {envDetails.env_id}</p>
+                                        <p><strong>环境名称:</strong> {envDetails.name}</p>
+                                        <p><strong>Python版本:</strong> {envDetails.python_version || '未知'}</p>
+                                        <p><strong>创建日期:</strong> {envDetails.created_at || '未知'}</p>
                                     </CCol>
                                     <CCol md={6}>
                                         <h6>使用统计</h6>
-                                        <p><strong>总任务数:</strong> 24</p>
-                                        <p><strong>成功率:</strong> 92%</p>
-                                        <p><strong>平均执行时间:</strong> 45秒</p>
-                                        <p><strong>磁盘占用:</strong> 1.2 GB</p>
+                                        <p><strong>总任务数:</strong> {envDetails.usage_stats?.total_tasks || 0}</p>
+                                        <p><strong>成功率:</strong> {envDetails.usage_stats?.success_rate || 0}%</p>
+                                        <p><strong>平均执行时间:</strong> {envDetails.usage_stats?.avg_execution_time || 0}秒</p>
+                                        <p><strong>磁盘占用:</strong> {envDetails.usage_stats?.disk_usage || 0} GB</p>
                                     </CCol>
                                 </CRow>
                                 <h6 className="mt-4">已安装的主要包</h6>
@@ -349,31 +411,156 @@ const CondaManager = () => {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr>
-                                            <td>numpy</td>
-                                            <td>1.24.3</td>
-                                        </tr>
-                                        <tr>
-                                            <td>pandas</td>
-                                            <td>2.0.1</td>
-                                        </tr>
-                                        <tr>
-                                            <td>scikit-learn</td>
-                                            <td>1.2.2</td>
-                                        </tr>
-                                        <tr>
-                                            <td>matplotlib</td>
-                                            <td>3.7.1</td>
-                                        </tr>
+                                        {envDetails.packages && envDetails.packages.length > 0 ? (
+                                            envDetails.packages.map((pkg, index) => (
+                                                <tr key={index}>
+                                                    <td>{pkg.name}</td>
+                                                    <td>{pkg.version}</td>
+                                                </tr>
+                                            ))
+                                        ) : (
+                                            <tr>
+                                                <td colSpan="2" className="text-center">暂无包信息</td>
+                                            </tr>
+                                        )}
                                     </tbody>
                                 </CTable>
                             </CCardBody>
                         </CCard>
                     )}
+                    {selectedEnv && !envDetails && (
+                        <div className="text-center mt-3 mb-3">
+                            <CSpinner color="primary" />
+                            <p className="mt-2">正在加载环境详情...</p>
+                        </div>
+                    )}
                 </CModalBody>
                 <CModalFooter>
-                    <CButton color="secondary" onClick={() => setDetailsVisible(false)}>
+                    <CButton color="primary" onClick={() => dispatch(showInstallPackagesModal(selectedEnv))}>
+                        安装包
+                    </CButton>
+                    <CButton
+                        color="warning"
+                        onClick={() => dispatch(showRemovePackagesModal({
+                            env: selectedEnv,
+                            packages: envDetails?.packages?.map(pkg => pkg.name) || []
+                        }))}
+                    >
+                        删除包
+                    </CButton>
+                    <CButton color="secondary" onClick={() => dispatch(hideDetailsModal())}>
                         关闭
+                    </CButton>
+                </CModalFooter>
+            </CModal>
+
+            {/* 编辑环境模态框 */}
+            <CModal visible={editModalVisible} onClose={() => dispatch(hideEditModal())}>
+                <CModalHeader onClose={() => dispatch(hideEditModal())}>
+                    <CModalTitle>编辑环境: {selectedEnv?.name}</CModalTitle>
+                </CModalHeader>
+                <CModalBody>
+                    <div className="mb-3">
+                        <label className="form-label">新环境名称</label>
+                        <CFormInput
+                            type="text"
+                            value={editEnvName}
+                            onChange={(e) => dispatch(setEditEnvName(e.target.value))}
+                            placeholder="输入新环境名称"
+                        />
+                    </div>
+                </CModalBody>
+                <CModalFooter>
+                    <CButton color="secondary" onClick={() => dispatch(hideEditModal())}>
+                        取消
+                    </CButton>
+                    <CButton color="primary" onClick={handleRenameEnvironment}>
+                        保存
+                    </CButton>
+                </CModalFooter>
+            </CModal>
+
+            {/* 安装包模态框 */}
+            <CModal visible={installPackagesModalVisible} onClose={() => dispatch(hideInstallPackagesModal())}>
+                <CModalHeader onClose={() => dispatch(hideInstallPackagesModal())}>
+                    <CModalTitle>安装包: {selectedEnv?.name}</CModalTitle>
+                </CModalHeader>
+                <CModalBody>
+                    <div className="mb-3">
+                        <label className="form-label">要安装的包列表</label>
+                        <CFormInput
+                            as="textarea"
+                            rows={5}
+                            value={newPackages}
+                            onChange={(e) => dispatch(setNewPackages(e.target.value))}
+                            placeholder="输入要安装的包名，每行一个或用逗号分隔，例如：numpy,pandas,matplotlib>=3.4.0"
+                        />
+                        <small className="text-muted">提示：可以指定版本，例如 numpy==1.20.0，也可以使用 >= 指定最低版本</small>
+                    </div>
+                </CModalBody>
+                <CModalFooter>
+                    <CButton color="secondary" onClick={() => dispatch(hideInstallPackagesModal())}>
+                        取消
+                    </CButton>
+                    <CButton color="primary" onClick={handleInstallPackages}>
+                        安装
+                    </CButton>
+                </CModalFooter>
+            </CModal>
+
+            {/* 删除包模态框 */}
+            <CModal visible={removePackagesModalVisible} onClose={() => dispatch(hideRemovePackagesModal())}>
+                <CModalHeader onClose={() => dispatch(hideRemovePackagesModal())}>
+                    <CModalTitle>删除包: {selectedEnv?.name}</CModalTitle>
+                </CModalHeader>
+                <CModalBody>
+                    <div className="mb-3">
+                        <label className="form-label">选择要删除的包</label>
+                        <div className="border p-3 rounded" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                            {envDetails?.packages?.length > 0 ? (
+                                envDetails.packages.map((pkg, index) => (
+                                    <div className="form-check" key={index}>
+                                        <input
+                                            className="form-check-input"
+                                            type="checkbox"
+                                            id={`pkg-${index}`}
+                                            value={pkg.name}
+                                            checked={selectedPackages.includes(pkg.name)}
+                                            onChange={(e) => {
+                                                const name = pkg.name;
+                                                if (e.target.checked) {
+                                                    dispatch(setSelectedPackages([...selectedPackages, name]));
+                                                } else {
+                                                    dispatch(setSelectedPackages(selectedPackages.filter(p => p !== name)));
+                                                }
+                                            }}
+                                        />
+                                        <label className="form-check-label" htmlFor={`pkg-${index}`}>
+                                            {pkg.name} ({pkg.version})
+                                        </label>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-center text-muted">该环境中没有可删除的包</p>
+                            )}
+                        </div>
+                        {selectedPackages.length > 0 && (
+                            <div className="mt-2">
+                                <small className="text-primary">已选择 {selectedPackages.length} 个包</small>
+                            </div>
+                        )}
+                    </div>
+                </CModalBody>
+                <CModalFooter>
+                    <CButton color="secondary" onClick={() => dispatch(hideRemovePackagesModal())}>
+                        取消
+                    </CButton>
+                    <CButton
+                        color="danger"
+                        onClick={handleRemovePackages}
+                        disabled={selectedPackages.length === 0}
+                    >
+                        删除
                     </CButton>
                 </CModalFooter>
             </CModal>

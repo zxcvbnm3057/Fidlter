@@ -24,17 +24,31 @@ def list_conda_environments():
 
     if "envs" in conda_envs:
         for idx, env_path in enumerate(conda_envs.get("envs", [])):
+            env_id = idx + 1
             env_name = os.path.basename(env_path)
 
-            # 获取环境的Python版本和包列表（可能需要额外调用conda命令）
-            # 这里为简化处理，仅返回基本信息
-            formatted_envs.append({
-                "env_id": idx + 1,
-                "name": env_name,
-                "python_version": "获取中...",  # 实际实现应该获取真实版本
-                "packages": [],  # 实际实现应该获取真实包列表
-                "created_at": "获取中..."  # 实际实现应该获取真实创建时间
-            })
+            # 获取环境详情以获取更准确的信息
+            env_details = conda_manager.get_environment_details(env_id)
+
+            if env_details.get("success", False):
+                details = env_details.get("output", {})
+                formatted_envs.append({
+                    "env_id": env_id,
+                    "name": env_name,
+                    "python_version": details.get("python_version", "未知"),
+                    "packages": details.get("packages", []),  # 返回实际的包列表
+                    "created_at": details.get("created_at",
+                                              datetime.now().strftime("%Y-%m-%d"))
+                })
+            else:
+                # 如果无法获取详情，添加基本信息
+                formatted_envs.append({
+                    "env_id": env_id,
+                    "name": env_name,
+                    "python_version": "未知",
+                    "packages": [],
+                    "created_at": datetime.now().strftime("%Y-%m-%d")
+                })
 
     return jsonify(formatted_envs)
 
@@ -357,6 +371,26 @@ def get_task_status(task_id):
     return jsonify(status), 200
 
 
+@api.route('/tasks/<int:task_id>/stop', methods=['POST'])
+def stop_task(task_id):
+    """停止正在运行的任务"""
+    try:
+        result = task_scheduler.stop_task(task_id)
+
+        if not result.get('success', False):
+            # 判断错误类型
+            if "not found" in result.get('message', ''):
+                return jsonify(result), 404
+            elif "not in a running state" in result.get('message', ''):
+                return jsonify(result), 400
+            else:
+                return jsonify(result), 400
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Failed to stop task: {str(e)}", "error": str(e)}), 500
+
+
 @api.route('/tasks/stats', methods=['GET'])
 def get_task_stats():
     """获取任务统计信息"""
@@ -389,3 +423,42 @@ def get_task_history():
         return jsonify({"status": "success", "data": task_history}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@api.route('/conda/stats', methods=['GET'])
+def get_conda_stats():
+    """获取Conda环境统计信息"""
+    try:
+        stats_result = conda_manager.get_environment_stats()
+        if stats_result.get("success", False):
+            return jsonify(stats_result.get("output", {}))
+        else:
+            return jsonify({
+                "message": stats_result.get("message", "Failed to get environment statistics"),
+                "error": stats_result.get("error", "Unknown error")
+            }), 500
+    except Exception as e:
+        return jsonify({"message": "Failed to get environment statistics", "error": str(e)}), 500
+
+
+@api.route('/conda/environment/<int:env_id>', methods=['GET'])
+def get_conda_environment_details(env_id):
+    """获取特定Conda环境的详细信息"""
+    try:
+        details_result = conda_manager.get_environment_details(env_id)
+        if details_result.get("success", False):
+            return jsonify(details_result.get("output", {}))
+        else:
+            # 如果环境不存在，返回404状态码
+            if "not found" in details_result.get("message", "").lower():
+                return jsonify({
+                    "message": details_result.get("message", "Environment not found"),
+                    "error": details_result.get("error", "Environment with this ID does not exist")
+                }), 404
+            # 其他错误返回500状态码
+            return jsonify({
+                "message": details_result.get("message", "Failed to get environment details"),
+                "error": details_result.get("error", "Unknown error")
+            }), 500
+    except Exception as e:
+        return jsonify({"message": "Failed to get environment details", "error": str(e)}), 500

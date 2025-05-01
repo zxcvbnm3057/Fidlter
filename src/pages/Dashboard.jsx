@@ -50,17 +50,17 @@ const Dashboard = () => {
 
         // 柱状图 - 最近7天任务趋势
         const last7DaysData = {
-            labels: ['7天前', '6天前', '5天前', '4天前', '3天前', '2天前', '昨天'],
+            labels: taskStats.last_7_days?.dates || ['7天前', '6天前', '5天前', '4天前', '3天前', '2天前', '昨天'],
             datasets: [
                 {
                     label: '成功的任务',
                     backgroundColor: '#2ECC71',
-                    data: Array(7).fill(0).map(() => Math.floor(Math.random() * 10)), // 模拟数据，实际应从API获取
+                    data: taskStats.last_7_days?.success_counts || Array(7).fill(0),
                 },
                 {
                     label: '失败的任务',
                     backgroundColor: '#E74C3C',
-                    data: Array(7).fill(0).map(() => Math.floor(Math.random() * 5)), // 模拟数据，实际应从API获取
+                    data: taskStats.last_7_days?.failed_counts || Array(7).fill(0),
                 },
             ],
         };

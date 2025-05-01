@@ -123,21 +123,27 @@ function* createTaskSaga(action) {
     }
 }
 
-// 停止任务 - 注意：此功能在Endpoint文档中未定义
-// 需要与后端确认是否支持此API，或者定义新的API
+// 停止任务
 function* stopTaskSaga(action) {
     try {
-        // 临时方案：根据任务ID获取任务详情，然后判断如何处理
+        // 获取任务详情
         const taskResponse = yield call(axios.get, `/api/tasks/${action.payload.taskId}`);
 
         if (taskResponse.data.success) {
-            // 如果任务状态为running，则尝试停止
-            if (taskResponse.data.task.status === 'running') {
-                // 临时API调用，实际应确认后端是否有停止任务的API
-                yield call(axios.post, `/api/tasks/${action.payload.taskId}/stop`);
-                yield put(stopTaskSuccess({ taskId: action.payload.taskId }));
+            const task = taskResponse.data.task;
+
+            // 检查任务状态
+            if (task.status === 'running') {
+
+                const stopResponse = yield call(axios.post, `/api/tasks/${action.payload.taskId}/stop`);
+
+                if (stopResponse.data.success) {
+                    yield put(stopTaskSuccess({ taskId: action.payload.taskId }));
+                } else {
+                    yield put(stopTaskFailure(stopResponse.data.message || '停止任务失败'));
+                }
             } else {
-                yield put(stopTaskFailure('任务当前不在运行状态，无法停止'));
+                yield put(stopTaskFailure(`任务当前状态为 ${task.status}，无法停止`));
             }
         } else {
             yield put(stopTaskFailure('获取任务信息失败，无法停止任务'));
@@ -147,6 +153,8 @@ function* stopTaskSaga(action) {
         yield put(fetchTasksRequest());
     } catch (error) {
         yield put(stopTaskFailure(error.response?.data?.message || '停止任务失败'));
+        // 仍需重新获取任务列表以保持UI同步
+        yield put(fetchTasksRequest());
     }
 }
 
