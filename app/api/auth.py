@@ -4,6 +4,7 @@ import uuid
 import time
 from functools import wraps
 
+# 移除url_prefix，让这个由注册时指定
 auth_bp = Blueprint('auth', __name__)
 
 # 会话存储，实际项目中应当使用Redis或数据库存储
@@ -59,7 +60,7 @@ def requires_admin(f):
             return jsonify({"message": "Unauthorized - Admin privileges required"}), 403
 
         request.user = session
-        return f(*args, **kwargs)
+        return f(*args, **kwargs)  # 修复：返回被装饰函数的结果
 
     return decorated
 
@@ -138,6 +139,22 @@ def logout():
     response.set_cookie('session', '', expires=0, path='/')
 
     return response
+
+
+# 新增：获取当前用户信息
+@auth_bp.route('/user', methods=['GET'])
+@requires_session
+def get_user():
+    # 从会话中获取用户信息
+    return jsonify({"user": {"username": request.user['username'], "is_admin": request.user['is_admin']}})
+
+
+# 新增：检查会话是否有效
+@auth_bp.route('/check', methods=['GET'])
+@requires_session
+def check_session():
+    # 如果会话有效，返回成功
+    return jsonify({"valid": True})
 
 
 # 辅助函数，用于清理过期会话

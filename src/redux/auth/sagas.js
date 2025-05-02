@@ -1,5 +1,5 @@
 import { takeLatest, put, call } from 'redux-saga/effects';
-import axios from '../../utils/axios';
+import { authService } from '../../services';
 import {
     loginRequest,
     loginSuccess,
@@ -11,18 +11,14 @@ import {
 // 处理登录请求的worker saga
 function* loginSaga(action) {
     try {
-        // 修改API路径与后端一致
-        const response = yield call(
-            axios.post,
-            '/login',
-            action.payload
-        );
+        // 使用authService处理登录请求
+        const data = yield call(authService.login, action.payload);
 
-        // 如果登录成功 - 使用Cookie认证，不再处理token
-        if (response.data.message === "Login successful") {
+        // 如果登录成功
+        if (data.message === "Login successful") {
             // 分发登录成功action
             yield put(loginSuccess({
-                user: response.data.user || { username: action.payload.username }
+                user: data.user || { username: action.payload.username }
             }));
         } else {
             // 分发登录失败action
@@ -30,15 +26,15 @@ function* loginSaga(action) {
         }
     } catch (error) {
         // 处理错误
-        yield put(loginFailure(error.response?.data?.message || '登录失败，请稍后重试'));
+        yield put(loginFailure(error.message || '登录失败，请稍后重试'));
     }
 }
 
 // 处理登出请求的worker saga
 function* logoutSaga() {
     try {
-        // 调用登出API
-        yield call(axios.post, '/logout');
+        // 调用登出方法
+        yield call(authService.logout);
 
         // 分发登出成功action
         yield put(logoutSuccess());

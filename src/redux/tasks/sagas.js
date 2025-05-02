@@ -1,148 +1,23 @@
-import { takeLatest, call, put, all } from 'redux-saga/effects';
-import axios from '../../utils/axios';
+import { takeLatest, all } from 'redux-saga/effects';
 import {
     fetchTasksRequest,
-    fetchTasksSuccess,
-    fetchTasksFailure,
     fetchTaskHistoryRequest,
-    fetchTaskHistorySuccess,
-    fetchTaskHistoryFailure,
     fetchTaskStatsRequest,
-    fetchTaskStatsSuccess,
-    fetchTaskStatsFailure,
     createTaskRequest,
-    createTaskSuccess,
-    createTaskFailure,
-    stopTaskRequest,
-    stopTaskSuccess,
-    stopTaskFailure
+    stopTaskRequest
 } from './reducer';
 
-// 获取任务列表 - 路径已符合Endpoint文档
-function* fetchTasksSaga() {
-    try {
-        const response = yield call(axios.get, '/api/tasks');
-        yield put(fetchTasksSuccess(response.data));
-    } catch (error) {
-        yield put(fetchTasksFailure(error.response?.data?.message || '获取任务列表失败'));
-    }
-}
+// 导入拆分后的saga文件
+import {
+    fetchTasksSaga,
+    fetchTaskHistorySaga,
+    fetchTaskStatsSaga
+} from './sagas/taskQueries';
 
-// 获取任务历史记录 - 路径已符合Endpoint文档
-function* fetchTaskHistorySaga() {
-    try {
-        const response = yield call(axios.get, '/api/tasks/history');
-        // 调整为匹配Endpoint文档中的响应格式
-        yield put(fetchTaskHistorySuccess(response.data.data || []));
-    } catch (error) {
-        yield put(fetchTaskHistoryFailure(error.response?.data?.message || '获取任务历史记录失败'));
-    }
-}
-
-// 获取任务统计数据 - 路径已符合Endpoint文档
-function* fetchTaskStatsSaga() {
-    try {
-        const response = yield call(axios.get, '/api/tasks/stats');
-        yield put(fetchTaskStatsSuccess(response.data));
-    } catch (error) {
-        yield put(fetchTaskStatsFailure(error.response?.data?.message || '获取任务统计数据失败'));
-    }
-}
-
-// 创建任务 - 路径已符合Endpoint文档
-function* createTaskSaga(action) {
-    try {
-        // 调整任务参数格式，将前端参数转换为API格式
-        const taskData = { ...action.payload };
-
-        // 处理Conda环境
-        if (taskData.condaEnv) {
-            taskData.conda_env = taskData.condaEnv;
-            delete taskData.condaEnv;
-        }
-
-        // 处理调度选项
-        if (taskData.scheduleType === 'once' && taskData.scheduledDate && taskData.scheduledTime) {
-            // 一次性延迟执行
-            const scheduledDateTime = new Date(`${taskData.scheduledDate}T${taskData.scheduledTime}`);
-            const now = new Date();
-            const delaySeconds = Math.floor((scheduledDateTime - now) / 1000);
-
-            if (delaySeconds > 0) {
-                taskData.delay_seconds = delaySeconds;
-            }
-        } else if (taskData.scheduleType === 'cron' && taskData.cronExpression) {
-            // 直接使用cron表达式
-            taskData.cron_expression = taskData.cronExpression;
-        }
-
-        // 删除非API字段
-        delete taskData.scheduleType;
-        delete taskData.scheduledDate;
-        delete taskData.scheduledTime;
-        delete taskData.cronExpression;
-
-        // 发送请求
-        const response = yield call(axios.post, '/api/tasks', taskData);
-
-        // 处理响应
-        if (response.data.success) {
-            yield put(createTaskSuccess(response.data.task || response.data));
-            // 创建成功后重新获取任务列表
-            yield put(fetchTasksRequest());
-        } else {
-            yield put(createTaskFailure(response.data.message || '创建任务失败'));
-        }
-    } catch (error) {
-        // 根据API文档处理特定错误
-        if (error.response?.status === 400) {
-            if (error.response.data.message.includes('already exists')) {
-                yield put(createTaskFailure('任务名称已存在'));
-            } else if (error.response.data.message.includes('cron expression')) {
-                yield put(createTaskFailure('Cron表达式无效'));
-            } else {
-                yield put(createTaskFailure(error.response.data.message || '创建任务失败'));
-            }
-        } else {
-            yield put(createTaskFailure(error.response?.data?.message || '创建任务失败'));
-        }
-    }
-}
-
-// 停止任务
-function* stopTaskSaga(action) {
-    try {
-        // 获取任务详情
-        const taskResponse = yield call(axios.get, `/api/tasks/${action.payload.taskId}`);
-
-        if (taskResponse.data.success) {
-            const task = taskResponse.data.task;
-
-            // 检查任务状态
-            if (task.status === 'running') {
-
-                const stopResponse = yield call(axios.post, `/api/tasks/${action.payload.taskId}/stop`);
-
-                if (stopResponse.data.success) {
-                    yield put(stopTaskSuccess({ taskId: action.payload.taskId }));
-                } else {
-                    yield put(stopTaskFailure(stopResponse.data.message || '停止任务失败'));
-                }
-            } else {
-                yield put(stopTaskFailure(`任务当前状态为 ${task.status}，无法停止`));
-            }
-        } else {
-            yield put(stopTaskFailure('获取任务信息失败，无法停止任务'));
-        }
-
-        // 无论成功与否，都重新获取任务列表
-        yield put(fetchTasksRequest());
-    } catch (error) {
-        yield put(stopTaskFailure(error.response?.data?.message || '停止任务失败'));
-        // 仍需重新获取任务列表以保持UI同步
-        yield put(fetchTasksRequest());
-    }
-}
+import {
+    createTaskSaga,
+    stopTaskSaga
+} from './sagas/taskOperations';
 
 // 任务管理模块的根saga
 export default function* tasksSagas() {
