@@ -7,6 +7,7 @@ const initialState = {
     envDetails: null,
     loading: false,
     error: null,
+    streamLoading: false, // 新增：标记流式加载状态
     // 添加模态框和表单相关的状态
     createModalVisible: false,
     newEnvName: '',
@@ -26,6 +27,20 @@ const condaSlice = createSlice({
     name: 'conda',
     initialState,
     reducers: {
+        // 设置环境加载状态（用于流式加载）
+        setEnvironmentsLoading: (state, action) => {
+            state.streamLoading = action.payload;
+            if (action.payload === true) {
+                // 开始新的流式加载时，清空原有环境列表
+                state.environments = [];
+            }
+        },
+
+        // 添加单个环境（用于流式加载）
+        addEnvironment: (state, action) => {
+            state.environments.push(action.payload);
+        },
+
         // 获取环境列表请求
         fetchEnvironmentsRequest: (state) => {
             state.loading = true;
@@ -34,11 +49,15 @@ const condaSlice = createSlice({
         // 获取环境列表成功
         fetchEnvironmentsSuccess: (state, action) => {
             state.loading = false;
-            state.environments = action.payload;
+            // 仅在非流式加载时才替换环境列表
+            if (action.payload.length > 0) {
+                state.environments = action.payload;
+            }
         },
         // 获取环境列表失败
         fetchEnvironmentsFailure: (state, action) => {
             state.loading = false;
+            state.streamLoading = false; // 确保流式加载状态也被重置
             state.error = action.payload;
         },
 
@@ -236,6 +255,8 @@ const condaSlice = createSlice({
 
 // 导出action creators
 export const {
+    setEnvironmentsLoading,
+    addEnvironment,
     fetchEnvironmentsRequest,
     fetchEnvironmentsSuccess,
     fetchEnvironmentsFailure,

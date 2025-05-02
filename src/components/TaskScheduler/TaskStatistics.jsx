@@ -5,11 +5,18 @@ import {
     CCol,
     CCard,
     CCardBody,
-    CCardTitle
+    CCardTitle,
+    CBadge,
+    CTooltip
 } from '@coreui/react';
 
 // 任务统计组件
 const TaskStatistics = ({ taskList, taskHistory }) => {
+    // 检查数据是否存在不完整情况
+    const isDataIncomplete = (data) => {
+        return !data || data.length === 0;
+    }
+
     // 准备任务状态饼图数据
     const prepareTaskStatusChart = () => {
         if (!taskList.length && !taskHistory.length) return null;
@@ -92,13 +99,28 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
         };
     };
 
+    // 渲染数据不完整警告标签
+    const renderIncompleteDataWarning = (tooltipText) => {
+        return (
+            <CTooltip content={tooltipText}>
+                <CBadge color="warning" className="ms-2">
+                    <span className="me-1">⚠️</span> 数据不完整
+                </CBadge>
+            </CTooltip>
+        );
+    }
+
     return (
         <>
             <CRow className="mb-4">
                 <CCol sm={6} lg={3}>
                     <CCard className="mb-4 text-center">
                         <CCardBody>
-                            <CCardTitle component="h5">总任务数</CCardTitle>
+                            <CCardTitle component="h5">
+                                总任务数
+                                {isDataIncomplete(taskList) && isDataIncomplete(taskHistory) &&
+                                    renderIncompleteDataWarning("无法获取完整的任务列表")}
+                            </CCardTitle>
                             <div className="h1 mt-3 mb-2">{taskList.length + taskHistory.length}</div>
                         </CCardBody>
                     </CCard>
@@ -106,7 +128,11 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
                 <CCol sm={6} lg={3}>
                     <CCard className="mb-4 text-center">
                         <CCardBody>
-                            <CCardTitle component="h5">运行中任务</CCardTitle>
+                            <CCardTitle component="h5">
+                                运行中任务
+                                {isDataIncomplete(taskList) &&
+                                    renderIncompleteDataWarning("无法获取完整的运行中任务信息")}
+                            </CCardTitle>
                             <div className="h1 mt-3 mb-2 text-primary">
                                 {taskList.filter(task => task.status === 'running').length}
                             </div>
@@ -116,7 +142,11 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
                 <CCol sm={6} lg={3}>
                     <CCard className="mb-4 text-center">
                         <CCardBody>
-                            <CCardTitle component="h5">已完成任务</CCardTitle>
+                            <CCardTitle component="h5">
+                                已完成任务
+                                {isDataIncomplete(taskHistory) &&
+                                    renderIncompleteDataWarning("无法获取完整的已完成任务信息")}
+                            </CCardTitle>
                             <div className="h1 mt-3 mb-2 text-success">
                                 {taskHistory.filter(task => task.status === 'success').length}
                             </div>
@@ -126,7 +156,11 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
                 <CCol sm={6} lg={3}>
                     <CCard className="mb-4 text-center">
                         <CCardBody>
-                            <CCardTitle component="h5">失败任务</CCardTitle>
+                            <CCardTitle component="h5">
+                                失败任务
+                                {isDataIncomplete(taskHistory) &&
+                                    renderIncompleteDataWarning("无法获取完整的失败任务信息")}
+                            </CCardTitle>
                             <div className="h1 mt-3 mb-2 text-danger">
                                 {taskHistory.filter(task => task.status === 'failed').length}
                             </div>
@@ -139,8 +173,12 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
                 <CCol md={6}>
                     <CCard className="mb-4">
                         <CCardBody>
-                            <CCardTitle component="h5">任务状态分布</CCardTitle>
-                            {prepareTaskStatusChart() && (
+                            <CCardTitle component="h5">
+                                任务状态分布
+                                {(isDataIncomplete(taskList) || isDataIncomplete(taskHistory)) &&
+                                    renderIncompleteDataWarning("任务状态分布数据可能不完整")}
+                            </CCardTitle>
+                            {prepareTaskStatusChart() ? (
                                 <CChart
                                     type="doughnut"
                                     data={prepareTaskStatusChart()}
@@ -154,6 +192,11 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
                                     }}
                                     style={{ height: '250px' }}
                                 />
+                            ) : (
+                                <div className="text-center py-5 text-muted">
+                                    <span className="h4">⚠️</span>
+                                    <p>无法获取任务状态分布数据</p>
+                                </div>
                             )}
                         </CCardBody>
                     </CCard>
@@ -161,7 +204,11 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
                 <CCol md={6}>
                     <CCard className="mb-4">
                         <CCardBody>
-                            <CCardTitle component="h5">环境使用情况</CCardTitle>
+                            <CCardTitle component="h5">
+                                环境使用情况
+                                {isDataIncomplete(taskHistory) &&
+                                    renderIncompleteDataWarning("环境使用情况数据可能不完整")}
+                            </CCardTitle>
                             {prepareEnvUsageChart() ? (
                                 <CChart
                                     type="bar"
@@ -186,7 +233,10 @@ const TaskStatistics = ({ taskList, taskHistory }) => {
                                     style={{ height: '250px' }}
                                 />
                             ) : (
-                                <div className="text-center my-5">暂无环境使用数据</div>
+                                <div className="text-center py-5 text-muted">
+                                    <span className="h4">⚠️</span>
+                                    <p>无法获取环境使用情况数据</p>
+                                </div>
                             )}
                         </CCardBody>
                     </CCard>

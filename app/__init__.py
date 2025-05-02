@@ -1,6 +1,12 @@
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, request, g
 from flask_cors import CORS
 import os
+import time
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('fidlter')
 
 
 def create_app():
@@ -23,6 +29,25 @@ def create_app():
 
     # 注册认证蓝图，添加'/api/auth'前缀
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
+
+    # 请求处理前记录开始时间
+    @app.before_request
+    def before_request():
+        g.start_time = time.time()
+
+    # 请求处理后记录结束时间和总耗时
+    @app.after_request
+    def after_request(response):
+        if hasattr(g, 'start_time'):
+            # 计算请求处理时间（毫秒）
+            elapsed_time = (time.time() - g.start_time) * 1000
+
+            # 仅对API请求记录耗时（不记录静态资源请求）
+            if request.path.startswith('/api'):
+                logger.info(
+                    f'请求: {request.method} {request.path} - 状态码: {response.status_code} - 耗时: {elapsed_time:.2f}ms')
+
+        return response
 
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')

@@ -16,14 +16,78 @@ import {
     renameEnvironmentFailure,
     fetchEnvironmentsRequest,
     fetchEnvStatsRequest,
-    fetchEnvDetailsRequest
+    fetchEnvDetailsRequest,
+    setEnvironmentsLoading,
+    addEnvironment
 } from '../reducer';
 
-// 获取环境列表
+// 获取环境列表 - 支持流式请求
 export function* fetchEnvironmentsSaga() {
     try {
-        const data = yield call(condaService.getEnvironments);
-        yield put(fetchEnvironmentsSuccess(data));
+        // 是否使用流式请求 (当环境数量多或网络延迟高时使用)
+        const useStreamMode = true;
+
+        if (useStreamMode) {
+            // 标记加载中
+            yield put(setEnvironmentsLoading(true));
+
+            // 获取流式响应
+            const response = yield call(condaService.getEnvironments, true);
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            // 创建流式读取器
+            const reader = response.body.getReader();
+
+            // 用于解析不完整的JSON行
+            let buffer = '';
+
+            // 循环读取响应流
+            while (true) {
+                const { done, value } = yield call([reader, reader.read]);
+
+                if (done) break;
+
+                // 将接收到的数据添加到缓冲区
+                buffer += new TextDecoder().decode(value);
+
+                // 按行分割并处理完整的JSON对象
+                const lines = buffer.split('\n');
+                buffer = lines.pop(); // 保留最后一行（可能不完整）
+
+                for (const line of lines) {
+                    if (line.trim()) {
+                        try {
+                            const envData = JSON.parse(line);
+                            // 逐个添加环境到状态
+                            yield put(addEnvironment(envData));
+                        } catch (e) {
+                            console.error('Error parsing JSON line:', e);
+                        }
+                    }
+                }
+            }
+
+            // 处理缓冲区中可能剩余的最后一行
+            if (buffer.trim()) {
+                try {
+                    const envData = JSON.parse(buffer);
+                    yield put(addEnvironment(envData));
+                } catch (e) {
+                    console.error('Error parsing final JSON line:', e);
+                }
+            }
+
+            // 标记加载完成
+            yield put(setEnvironmentsLoading(false));
+            yield put(fetchEnvironmentsSuccess([])); // 发送一个空数组，表示流式加载完成
+        } else {
+            // 常规请求
+            const data = yield call(condaService.getEnvironments);
+            yield put(fetchEnvironmentsSuccess(data));
+        }
     } catch (error) {
         yield put(fetchEnvironmentsFailure(error.message || '获取环境列表失败'));
     }

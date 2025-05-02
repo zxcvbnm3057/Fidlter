@@ -7,16 +7,34 @@ import {
     CButton,
     CBadge,
     CProgress,
-    CSpinner
+    CSpinner,
+    CTooltip
 } from '@coreui/react';
 import CIcon from '@coreui/icons-react';
 import { cilTrash, cilPencil, cilInfo, cilPlus } from '@coreui/icons';
+import { useSelector } from 'react-redux';
 
 const EnvList = ({ environments, envStats, loading, onShowDetails, onShowEdit, onDelete, onShowCreateModal }) => {
+    const { streamLoading } = useSelector(state => state.conda);
+
+    // 格式化磁盘使用量显示
+    const formatDiskUsage = (usage) => {
+        if (usage === null || usage === undefined) return '未知';
+        return `${usage.toFixed(2)} GB`;
+    };
+
     return (
         <CCard>
             <CCardHeader className="d-flex justify-content-between align-items-center">
-                <h5 className="mb-0">环境列表</h5>
+                <h5 className="mb-0">
+                    环境列表
+                    {streamLoading && (
+                        <CBadge color="info" className="ms-2">
+                            <CSpinner size="sm" className="me-1" />
+                            正在加载环境数据...
+                        </CBadge>
+                    )}
+                </h5>
                 <CButton color="primary" onClick={onShowCreateModal}>
                     <CIcon icon={cilPlus} className="me-2" />
                     创建新环境
@@ -30,6 +48,8 @@ const EnvList = ({ environments, envStats, loading, onShowDetails, onShowEdit, o
                             <th>环境名称</th>
                             <th>状态</th>
                             <th>Python版本</th>
+                            <th>磁盘使用</th>
+                            <th>包数量</th>
                             <th>使用率</th>
                             <th>操作</th>
                         </tr>
@@ -49,6 +69,15 @@ const EnvList = ({ environments, envStats, loading, onShowDetails, onShowEdit, o
                                             <CBadge color="success">活跃</CBadge>
                                         </td>
                                         <td>{env.python_version || '未知'}</td>
+                                        <td>
+                                            {formatDiskUsage(env.disk_usage)}
+                                            {env.is_size_accurate === false && (
+                                                <CTooltip content="磁盘使用数据可能不准确">
+                                                    <span className="ms-1 text-warning">⚠️</span>
+                                                </CTooltip>
+                                            )}
+                                        </td>
+                                        <td>{env.package_count || 0}</td>
                                         <td>
                                             <div className="d-flex align-items-center">
                                                 <div className="me-2" style={{ width: '60%' }}>
@@ -77,7 +106,7 @@ const EnvList = ({ environments, envStats, loading, onShowDetails, onShowEdit, o
                             })
                         ) : (
                             <tr>
-                                <td colSpan="6" className="text-center">
+                                <td colSpan="8" className="text-center">
                                     {loading ? <CSpinner size="sm" /> : '暂无环境数据'}
                                 </td>
                             </tr>

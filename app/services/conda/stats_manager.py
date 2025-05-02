@@ -62,17 +62,15 @@ class StatsManager:
         # 获取活跃环境（被任务使用的环境）
         active_envs = self._get_active_environments()
 
-        # 计算每个环境的使用情况
-        env_usage, package_stats, total_disk_usage, latest_created = self._calculate_environment_usage(envs)
+        # 计算每个环境的使用情况，但不再计算总磁盘和包统计
+        env_usage, latest_created = self._calculate_environment_usage(envs)
 
-        # 构建统计信息
+        # 构建统计信息 - 不再包含total_disk_usage和package_stats
         stats = {
             "total_environments": len(envs),
             "active_environments": len(active_envs),
-            "total_disk_usage": round(total_disk_usage, 2),
             "latest_created": latest_created,
-            "environment_usage": env_usage,
-            "package_stats": package_stats
+            "environment_usage": env_usage
         }
 
         return {"success": True, "output": stats}
@@ -89,25 +87,19 @@ class StatsManager:
         return active_envs
 
     def _calculate_environment_usage(self, envs):
-        """计算环境使用情况和包统计"""
+        """计算环境使用情况，不再计算包统计"""
         env_usage = []
-        package_stats = []
-        total_disk_usage = 0
         latest_created = None
         latest_time = None
 
-        for idx, env_path in enumerate(envs):
+        for env_path in envs:
             env_name = os.path.basename(env_path)
 
-            # 计算使用率、包数量和创建时间
-            usage_percent, package_count = self._get_env_usage_and_packages(env_name)
+            # 计算使用率
+            usage_percent = self._get_env_usage_percent(env_name)
 
-            # 估算磁盘使用量
-            disk_usage = package_count * 0.005  # GB
-            total_disk_usage += disk_usage
-
-            # 获取环境创建时间（实际应从环境元数据获取）
-            created_time = self._get_env_creation_time(env_path, idx)
+            # 获取环境创建时间
+            created_time = self._get_env_creation_time(env_path)
             created_at = created_time.strftime("%Y-%m-%d %H:%M:%S")
 
             # 记录最新创建的环境
@@ -115,14 +107,13 @@ class StatsManager:
                 latest_time = created_time
                 latest_created = {"name": env_name, "created_at": created_at}
 
-            # 添加到使用情况和包统计列表
+            # 添加到使用情况列表
             env_usage.append({"name": env_name, "usage_percent": round(usage_percent)})
-            package_stats.append({"name": env_name, "package_count": package_count})
 
-        return env_usage, package_stats, total_disk_usage, latest_created
+        return env_usage, latest_created
 
-    def _get_env_usage_and_packages(self, env_name):
-        """获取环境使用率和包数量"""
+    def _get_env_usage_percent(self, env_name):
+        """获取环境使用率百分比"""
         # 计算使用率 - 被多少任务使用
         usage_count = 0
         if self.task_scheduler:
@@ -134,27 +125,37 @@ class StatsManager:
         total_tasks = len(self.task_scheduler.tasks) if self.task_scheduler else 0
         usage_percent = (usage_count / total_tasks * 100) if total_tasks > 0 else 0
 
-        # 获取环境的包数量
-        package_count = 0
-        try:
-            command = [self.conda_command, "list", "--name", env_name, "--json"]
-            process = Popen(command, stdout=PIPE, stderr=PIPE)
-            stdout, stderr = process.communicate()
-            if not stderr:
-                packages_info = json.loads(stdout.decode("utf-8"))
-                package_count = len(packages_info)
-        except Exception:
-            self.logger.exception(f"Error getting package count for environment {env_name}")
+        return usage_percent
 
-        return usage_percent, package_count
-
-    def _get_env_creation_time(self, env_path, idx):
-        """获取环境创建时间"""
+    def _get_env_creation_time(self, env_path):
+        """获取环境创建时间，如果无法获取则返回当前时间并记录日志"""
         try:
+            # 尝试从环境目录的创建时间获取
             return datetime.fromtimestamp(os.path.getctime(env_path))
-        except Exception:
-            # 如果无法获取创建时间，使用当前时间减去索引值作为模拟
-            return datetime.now() - timedelta(days=idx)
+        except Exception as e:
+            self.logger.error(f"Error getting environment creation time: {str(e)}")
+
+            # 尝试通过conda-meta目录中的历史文件获取创建时间
+            try:
+                meta_dir = os.path.join(env_path, "conda-meta")
+                if os.path.exists(meta_dir):
+                    # 查找最早的包安装记录作为环境创建时间估计
+                    oldest_time = None
+                    for file in os.listdir(meta_dir):
+                        if file.endswith('.json'):
+                            file_path = os.path.join(meta_dir, file)
+                            file_time = datetime.fromtimestamp(os.path.getctime(file_path))
+                            if oldest_time is None or file_time < oldest_time:
+                                oldest_time = file_time
+
+                    if oldest_time:
+                        return oldest_time
+            except Exception as e2:
+                self.logger.error(f"Error getting environment creation time from meta: {str(e2)}")
+
+            # 如果无法获取，直接返回当前时间并记录无法确定
+            self.logger.warning(f"Could not determine creation time for environment at {env_path}, using current time")
+            return datetime.now()
 
     def get_environment_details(self, env_name):
         """获取特定环境的详细信息"""
@@ -321,7 +322,7 @@ class StatsManager:
         }
 
     def _calculate_disk_usage(self, env_name):
-        """计算环境的磁盘使用量"""
+        """计算环境的磁盘使用量，如果无法计算则返回0"""
         disk_usage = 0
         env_info = self._get_env_info(env_name)
 
@@ -348,9 +349,7 @@ class StatsManager:
                     disk_usage = total_size / (1024 * 1024 * 1024)  # 转换为GB
         except Exception as e:
             self.logger.error(f"Error calculating disk usage: {str(e)}")
-            # 获取环境的包数量，用于简单估算
-            _, package_count = self._get_env_usage_and_packages(env_name)
-            # 如果无法计算准确的磁盘使用量，使用基于包数量的估算
-            disk_usage = package_count * 0.005  # GB，简单估算
+            # 无法计算则返回0，不进行估算
+            disk_usage = 0
 
         return disk_usage

@@ -1,7 +1,8 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from app.services import CondaManager
 from datetime import datetime
 import os
+import json
 
 # 创建实例
 conda_manager = CondaManager()
@@ -12,7 +13,10 @@ conda_routes = Blueprint('conda', __name__, url_prefix='/conda')
 
 @conda_routes.route('/environments', methods=['GET'])
 def list_conda_environments():
-    """获取所有Conda环境列表"""
+    """获取所有Conda环境列表，支持流式响应"""
+    # 检查是否请求流式响应
+    stream = request.args.get('stream', 'false').lower() == 'true'
+
     environments_result = conda_manager.list_environments()
 
     # 判断是否成功获取环境列表
@@ -21,34 +25,92 @@ def list_conda_environments():
 
     # 解析conda环境列表，格式化为符合文档要求的格式
     conda_envs = environments_result.get("output", {})
-    formatted_envs = []
 
-    if "envs" in conda_envs:
-        for env_path in conda_envs.get("envs", []):
-            env_name = os.path.basename(env_path)
+    if stream:
+        # 流式响应
+        def generate():
+            if "envs" in conda_envs:
+                for env_path in conda_envs.get("envs", []):
+                    env_name = os.path.basename(env_path)
 
-            # 获取环境详情以获取更准确的信息
-            env_details = conda_manager.get_environment_details(env_name)
+                    # 获取环境详情以获取更准确的信息
+                    env_details = conda_manager.get_environment_details(env_name)
 
-            if env_details.get("success", False):
-                details = env_details.get("output", {})
-                formatted_envs.append({
-                    "name": env_name,
-                    "python_version": details.get("python_version", "未知"),
-                    "packages": details.get("packages", []),  # 返回实际的包列表
-                    "created_at": details.get("created_at",
-                                              datetime.now().strftime("%Y-%m-%d"))
-                })
-            else:
-                # 如果无法获取详情，添加基本信息
-                formatted_envs.append({
-                    "name": env_name,
-                    "python_version": "未知",
-                    "packages": [],
-                    "created_at": datetime.now().strftime("%Y-%m-%d")
-                })
+                    env_data = {}
+                    if env_details.get("success", False):
+                        details = env_details.get("output", {})
 
-    return jsonify(formatted_envs)
+                        # 计算磁盘使用量
+                        disk_usage = details.get("usage_stats", {}).get("disk_usage", None)
+                        is_size_accurate = disk_usage is not None and disk_usage > 0
+
+                        # 获取包数量
+                        package_count = len(details.get("packages", []))
+
+                        env_data = {
+                            "name": env_name,
+                            "python_version": details.get("python_version", "未知"),
+                            "created_at": details.get("created_at",
+                                                      datetime.now().strftime("%Y-%m-%d")),
+                            "disk_usage": disk_usage,
+                            "package_count": package_count,
+                            "is_size_accurate": is_size_accurate
+                        }
+                    else:
+                        # 如果无法获取详情，添加基本信息
+                        env_data = {
+                            "name": env_name,
+                            "python_version": "未知",
+                            "created_at": datetime.now().strftime("%Y-%m-%d"),
+                            "disk_usage": None,
+                            "package_count": 0,
+                            "is_size_accurate": False
+                        }
+
+                    yield json.dumps(env_data) + '\n'
+
+        return Response(generate(), mimetype='application/json')
+    else:
+        # 正常响应
+        formatted_envs = []
+        if "envs" in conda_envs:
+            for env_path in conda_envs.get("envs", []):
+                env_name = os.path.basename(env_path)
+
+                # 获取环境详情以获取更准确的信息
+                env_details = conda_manager.get_environment_details(env_name)
+
+                if env_details.get("success", False):
+                    details = env_details.get("output", {})
+
+                    # 计算磁盘使用量
+                    disk_usage = details.get("usage_stats", {}).get("disk_usage", None)
+                    is_size_accurate = disk_usage is not None and disk_usage > 0
+
+                    # 获取包数量
+                    package_count = len(details.get("packages", []))
+
+                    formatted_envs.append({
+                        "name": env_name,
+                        "python_version": details.get("python_version", "未知"),
+                        "created_at": details.get("created_at",
+                                                  datetime.now().strftime("%Y-%m-%d")),
+                        "disk_usage": disk_usage,
+                        "package_count": package_count,
+                        "is_size_accurate": is_size_accurate
+                    })
+                else:
+                    # 如果无法获取详情，添加基本信息
+                    formatted_envs.append({
+                        "name": env_name,
+                        "python_version": "未知",
+                        "created_at": datetime.now().strftime("%Y-%m-%d"),
+                        "disk_usage": None,
+                        "package_count": 0,
+                        "is_size_accurate": False
+                    })
+
+        return jsonify(formatted_envs)
 
 
 @conda_routes.route('/environment', methods=['POST'])
@@ -207,7 +269,13 @@ def get_conda_stats():
     try:
         stats_result = conda_manager.get_environment_stats()
         if stats_result.get("success", False):
-            return jsonify(stats_result.get("output", {}))
+            # 移除total_disk_usage和package_stats字段，前端将从环境列表计算
+            stats = stats_result.get("output", {})
+            if "total_disk_usage" in stats:
+                del stats["total_disk_usage"]
+            if "package_stats" in stats:
+                del stats["package_stats"]
+            return jsonify(stats)
         else:
             return jsonify({
                 "message": stats_result.get("message", "Failed to get environment statistics"),
