@@ -38,7 +38,9 @@ class TaskScheduler:
                       requirements=None,
                       reuse_env=False,
                       cron_expression=None,
-                      delay_seconds=None):
+                      delay_seconds=None,
+                      priority="normal",
+                      memory_limit=None):
         """调度一个新任务
         
         参数:
@@ -49,6 +51,8 @@ class TaskScheduler:
             reuse_env: 是否复用现有环境（如果True，尝试在现有环境中安装requirements）
             cron_expression: Cron表达式（可选，用于周期性执行任务）
             delay_seconds: 延迟执行的秒数（可选，用于一次性延迟执行）
+            priority: 任务优先级，可以是"high"、"normal"或"low"，默认为"normal"
+            memory_limit: 内存限制（MB），如果为None则不限制
             
         返回:
             创建的任务对象或错误信息
@@ -73,6 +77,31 @@ class TaskScheduler:
                 "error": "Cannot specify both cron_expression and delay_seconds",
                 "message": "Please specify either cron expression or delay seconds, not both"
             }
+
+        # 验证优先级参数
+        if priority not in ["high", "normal", "low"]:
+            return {
+                "success": False,
+                "error": f"Invalid priority value: {priority}",
+                "message": "Priority must be one of: high, normal, low"
+            }
+
+        # 验证内存限制参数
+        if memory_limit is not None:
+            try:
+                memory_limit = int(memory_limit)
+                if memory_limit <= 0:
+                    return {
+                        "success": False,
+                        "error": "Memory limit must be a positive integer",
+                        "message": "Please provide a valid memory limit value"
+                    }
+            except ValueError:
+                return {
+                    "success": False,
+                    "error": "Invalid memory limit value",
+                    "message": "Memory limit must be a valid number"
+                }
 
         # 验证cron表达式
         next_run_time = None
@@ -167,7 +196,9 @@ class TaskScheduler:
             'last_run_time': None,
             'last_run_duration': None,
             'last_execution_id': None,
-            'executions': []  # 存储该任务的所有执行记录ID
+            'executions': [],  # 存储该任务的所有执行记录ID
+            'priority': priority,
+            'memory_limit': memory_limit
         }
 
         self.tasks.append(task)
@@ -205,26 +236,40 @@ class TaskScheduler:
                 self.logger.error(f"Error in scheduler loop: {str(e)}")
 
     def _check_and_run_due_tasks(self):
-        """检查并执行到期的任务"""
+        """检查并执行到期的任务，考虑任务优先级"""
         now = datetime.now()
+        due_tasks = []
+
         with self.lock:
+            # 先收集所有到期的任务
             for task in self.tasks:
                 if task['status'] == 'scheduled' and task.get('next_run_time'):
                     next_run = datetime.strptime(task['next_run_time'], '%Y-%m-%d %H:%M:%S')
                     if now >= next_run:
-                        # 创建新线程执行任务
-                        thread = threading.Thread(target=self._execute_task, args=(task, ))
-                        thread.daemon = True
-                        thread.start()
+                        due_tasks.append(task)
 
-                        # 如果任务有cron表达式，计算下一次执行时间
-                        if task.get('cron_expression'):
-                            iter = croniter(task['cron_expression'], now)
-                            next_run = iter.get_next(datetime)
-                            task['next_run_time'] = next_run.strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            # 如果是一次性任务，将next_run_time设为None
-                            task['next_run_time'] = None
+            # 如果有多个任务到期，按优先级排序
+            if len(due_tasks) > 1:
+                # 优先级映射: high -> 3, normal -> 2, low -> 1
+                priority_map = {"high": 3, "normal": 2, "low": 1}
+                due_tasks.sort(key=lambda t: priority_map.get(t.get('priority', 'normal'), 2), reverse=True)
+
+        # 执行排序后的任务
+        for task in due_tasks:
+            # 创建新线程执行任务
+            thread = threading.Thread(target=self._execute_task, args=(task, ))
+            thread.daemon = True
+            thread.start()
+
+            with self.lock:
+                # 如果任务有cron表达式，计算下一次执行时间
+                if task.get('cron_expression'):
+                    iter = croniter(task['cron_expression'], now)
+                    next_run = iter.get_next(datetime)
+                    task['next_run_time'] = next_run.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    # 如果是一次性任务，将next_run_time设为None
+                    task['next_run_time'] = None
 
     def _execute_task(self, task):
         """执行任务并监控资源使用情况"""
@@ -321,9 +366,17 @@ class TaskScheduler:
                     history_record['logs'] += f"\nError: {str(e)}"
 
     def _monitor_process_memory(self, pid, task_id, execution_id):
-        """监控进程的内存使用情况"""
+        """监控进程的内存使用情况，如果设置了内存限制且超限则终止进程"""
         try:
             process = psutil.Process(pid)
+            memory_limit = None
+
+            # 获取任务信息
+            with self.lock:
+                task = next((t for t in self.tasks if t.get('task_id') == task_id), None)
+                if task and task.get('memory_limit'):
+                    memory_limit = task.get('memory_limit')
+
             while process.is_running() and psutil.pid_exists(pid):
                 try:
                     # 获取内存使用情况（MB）
@@ -335,6 +388,39 @@ class TaskScheduler:
                             (h for h in self.task_history[task_id] if h['execution_id'] == execution_id), None)
                         if history_record:
                             history_record['memory_usage'].append(memory_mb)
+
+                    # 检查是否超过内存限制
+                    if memory_limit and memory_mb > memory_limit:
+                        self.logger.warning(
+                            f"Task {task_id} exceeded memory limit of {memory_limit}MB (current: {memory_mb:.2f}MB). Terminating..."
+                        )
+
+                        # 终止进程
+                        process.terminate()
+
+                        # 更新任务状态和记录
+                        with self.lock:
+                            task = next((t for t in self.tasks if t.get('task_id') == task_id), None)
+                            if task:
+                                task['status'] = 'failed'
+
+                            history_record = next(
+                                (h for h in self.task_history[task_id] if h['execution_id'] == execution_id), None)
+                            if history_record:
+                                history_record['status'] = 'failed'
+                                history_record['end_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                history_record['duration'] = (datetime.now() - datetime.strptime(
+                                    history_record['start_time'], '%Y-%m-%d %H:%M:%S')).total_seconds()
+                                history_record[
+                                    'logs'] += f"\nTask terminated: Memory usage exceeded limit of {memory_limit}MB (reached {memory_mb:.2f}MB)"
+
+                                # 计算内存使用统计
+                                memory_samples = history_record['memory_usage']
+                                if memory_samples:
+                                    history_record['peak_memory'] = max(memory_samples)
+                                    history_record['avg_memory'] = sum(memory_samples) / len(memory_samples)
+
+                        break
 
                     time.sleep(0.5)  # 每0.5秒采样一次
                 except (psutil.NoSuchProcess, psutil.AccessDenied):

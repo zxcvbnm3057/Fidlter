@@ -95,10 +95,20 @@ class CondaManager:
                 "referencing_tasks": [task.get('script_path', 'Unknown') for task in referencing_tasks]
             }
 
-        command = [self.conda_command, "remove", "--name", env_name, "--yes"]
+        # 修正命令：使用 conda env remove 而不是 conda remove
+        command = [self.conda_command, "env", "remove", "--name", env_name, "--yes"]
         process = Popen(command, stdout=PIPE, stderr=PIPE)
         stdout, stderr = process.communicate()
-        return self._handle_process_output(stdout, stderr)
+
+        # 检查命令执行结果
+        if process.returncode != 0 or (stderr and (b"error" in stderr.lower())):
+            return {
+                "success": False,
+                "error": stderr.decode("utf-8") if stderr else f"Failed to delete environment '{env_name}'",
+                "message": "Failed to delete environment"
+            }
+
+        return {"success": True, "message": f"Environment '{env_name}' deleted successfully"}
 
     def list_environments(self):
         """列出所有Conda环境，排除base环境"""
@@ -130,61 +140,50 @@ class CondaManager:
 
     def rename_environment(self, old_name, new_name):
         """重命名Conda环境"""
-        # Conda没有直接重命名环境的命令，需要通过克隆和删除实现
-        # 1. 列出当前环境中的所有包
-        command = [self.conda_command, "list", "--name", old_name, "--json"]
-        process = Popen(command, stdout=PIPE, stderr=PIPE)
-        stdout, stderr = process.communicate()
-        if stderr:
-            return {"success": False, "error": stderr.decode("utf-8"), "message": "Environment not found"}
+        # 检查环境是否存在
+        env_exists = False
+        env_list_result = self.list_environments()
+        if env_list_result.get("success", False):
+            env_names = [os.path.basename(env) for env in env_list_result.get("output", {}).get("envs", [])]
+            env_exists = any(name == old_name for name in env_names)
 
-        packages_info = json.loads(stdout.decode("utf-8"))
-
-        # 2. 创建新环境并安装所有包
-        package_names = []
-        for package in packages_info:
-            if package.get("name") != "python":  # 排除python包，因为创建环境时会自动安装
-                package_spec = f"{package.get('name')}={package.get('version')}"
-                package_names.append(package_spec)
-
-        # 获取Python版本
-        python_version = None
-        for package in packages_info:
-            if package.get("name") == "python":
-                python_version = package.get("version")
-                break
-
-        # 创建新环境
-        create_command = [self.conda_command, "create", "--name", new_name, f"python={python_version}", "--yes"]
-        process = Popen(create_command, stdout=PIPE, stderr=PIPE)
-        stdout, stderr = process.communicate()
-        if stderr and b"error" in stderr.lower():
-            return {"success": False, "error": stderr.decode("utf-8"), "message": "Failed to create new environment"}
-
-        # 安装包
-        if package_names:
-            install_command = [self.conda_command, "install", "--name", new_name, "--yes"] + package_names
-            process = Popen(install_command, stdout=PIPE, stderr=PIPE)
-            stdout, stderr = process.communicate()
-            if stderr and b"error" in stderr.lower():
-                # 如果安装失败，删除新创建的环境
-                self.delete_environment(new_name)
-                return {
-                    "success": False,
-                    "error": stderr.decode("utf-8"),
-                    "message": "Failed to install packages in new environment"
-                }
-
-        # 3. 删除旧环境
-        delete_result = self.delete_environment(old_name)
-        if not delete_result.get("success", False):
+        if not env_exists:
             return {
                 "success": False,
-                "error": delete_result.get("error", "Unknown error"),
-                "message": "Failed to delete old environment"
+                "error": f"Environment '{old_name}' not found",
+                "message": "Environment not found"
             }
 
-        # 4. 更新任务中的环境引用
+        # 检查新名称是否已存在
+        if env_list_result.get("success", False):
+            env_names = [os.path.basename(env) for env in env_list_result.get("output", {}).get("envs", [])]
+            if any(name == new_name for name in env_names):
+                return {
+                    "success": False,
+                    "error": f"Environment '{new_name}' already exists",
+                    "message": "Environment with this name already exists"
+                }
+
+        # 先检查环境是否被任务引用
+        in_use, referencing_tasks = self.check_environment_in_use(old_name)
+        if in_use:
+            # 被任务引用的环境可以安全地重命名，因为我们会更新引用
+            # 但是需要提醒用户这一操作
+            pass  # 允许继续，但在返回结果中标记此情况
+
+        # 使用conda rename命令直接重命名环境
+        command = [self.conda_command, "rename", "--name", old_name, new_name, "--yes"]
+        process = Popen(command, stdout=PIPE, stderr=PIPE)
+        stdout, stderr = process.communicate()
+
+        if process.returncode != 0 or (stderr and (b"error" in stderr.lower())):
+            return {
+                "success": False,
+                "error": stderr.decode("utf-8") if stderr else "Unknown error during environment rename",
+                "message": "Failed to rename environment"
+            }
+
+        # 更新任务中的环境引用
         updated_tasks_count = self.update_tasks_environment_reference(old_name, new_name)
 
         return {
@@ -413,7 +412,7 @@ class CondaManager:
             # 记录最新创建的环境
             if latest_time is None or created_time > latest_time:
                 latest_time = created_time
-                latest_created = {"env_id": idx + 1, "name": env_name, "created_at": created_at}
+                latest_created = {"name": env_name, "created_at": created_at}
 
             # 添加到使用情况列表
             env_usage.append({"name": env_name, "usage_percent": round(usage_percent)})
@@ -433,11 +432,11 @@ class CondaManager:
 
         return {"success": True, "output": stats}
 
-    def get_environment_details(self, env_id):
+    def get_environment_details(self, env_name):
         """获取特定环境的详细信息
         
         参数:
-            env_id: 环境ID
+            env_name: 环境名称
             
         返回:
             dict: 包含环境详情的字典
@@ -454,17 +453,19 @@ class CondaManager:
         conda_envs = env_list_result.get("output", {})
         envs = conda_envs.get("envs", [])
 
-        # 检查环境ID是否有效
-        if env_id <= 0 or env_id > len(envs):
+        # 根据名称查找环境
+        env_path = None
+        for path in envs:
+            if os.path.basename(path) == env_name:
+                env_path = path
+                break
+
+        if not env_path:
             return {
                 "success": False,
-                "error": f"Environment with ID {env_id} not found",
+                "error": f"Environment with name '{env_name}' not found",
                 "message": "Environment not found"
             }
-
-        # 获取环境名称
-        env_path = envs[env_id - 1]  # env_id从1开始，数组索引从0开始
-        env_name = os.path.basename(env_path)
 
         # 获取环境的Python版本和所有包列表
         python_version = "Unknown"
@@ -483,9 +484,9 @@ class CondaManager:
             else:
                 error_msg = stderr.decode(
                     'utf-8') if stderr else f"Command failed with return code {process.returncode}"
-                self.logger.error(f"Error getting package list: {error_msg}")
+                print(f"Error getting package list: {error_msg}")
         except Exception as e:
-            self.logger.error(f"Exception getting package information: {str(e)}")
+            print(f"Exception getting package information: {str(e)}")
             # 如果发生异常，确保返回空数组而不是None
             packages = []
 
@@ -509,7 +510,7 @@ class CondaManager:
                             env_info["created_at"] = datetime.now().strftime("%Y-%m-%d")
                         break
         except Exception as e:
-            self.logger.error(f"Exception getting environment info: {str(e)}")
+            print(f"Exception getting environment info: {str(e)}")
 
         # 如果没有获取到创建时间，使用当前时间
         if "created_at" not in env_info:
@@ -582,7 +583,7 @@ class CondaManager:
                                 pass
                     disk_usage = total_size / (1024 * 1024 * 1024)  # 转换为GB
         except Exception as e:
-            self.logger.error(f"Error calculating disk usage: {str(e)}")
+            print(f"Error calculating disk usage: {str(e)}")
             # 如果无法计算准确的磁盘使用量，使用基于包数量的估算
             disk_usage = len(packages) * 0.005 if packages else 0.0  # GB，简单估算
 
@@ -594,7 +595,6 @@ class CondaManager:
 
         # 构建环境详情，确保usage_stats和packages永远不为空
         env_details = {
-            "env_id": env_id,
             "name": env_name,
             "python_version": python_version,
             "created_at": env_info.get("created_at",

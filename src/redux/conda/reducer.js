@@ -102,7 +102,7 @@ const condaSlice = createSlice({
         deleteEnvironmentSuccess: (state, action) => {
             state.loading = false;
             state.environments = state.environments.filter(
-                (env) => env.env_id !== action.payload.envId
+                (env) => env.name !== action.payload.envName
             );
         },
         // 删除环境失败
@@ -121,7 +121,7 @@ const condaSlice = createSlice({
             state.loading = false;
             // 更新环境名称
             state.environments = state.environments.map(env =>
-                env.env_id === action.payload.env_id
+                env.name === action.payload.envName
                     ? { ...env, name: action.payload.new_name }
                     : env
             );

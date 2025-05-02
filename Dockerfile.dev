@@ -1,0 +1,26 @@
+FROM continuumio/miniconda3:latest
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装Node.js
+RUN apt-get update && apt-get install -y curl && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g yarn
+
+# 确保conda命令可用并更新到最新版本
+RUN conda update -n base -c defaults conda && \
+    conda install -y python=3.11
+
+# 仅复制requirements.txt以利用Docker缓存
+COPY requirements.txt ./
+# Install packages into conda base environment
+RUN conda install -y -n base -c conda-forge --file requirements.txt
+
+# 暴露后端端口
+EXPOSE 5000
+
+# 注意：不要复制代码，因为我们将挂载当前工作目录
+# 开发时使用这个命令启动应用
+CMD ["python", "-m", "app"]

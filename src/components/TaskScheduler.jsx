@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useForm } from 'react-hook-form';
 import {
     fetchTasksRequest,
     fetchTaskHistoryRequest,
@@ -35,23 +36,98 @@ import {
     CModalBody,
     CModalFooter,
     CListGroup,
-    CListGroupItem
+    CListGroupItem,
+    CFormText,
+    CFormCheck,
+    CNav,
+    CNavItem,
+    CNavLink,
+    CTabContent,
+    CTabPane
 } from '@coreui/react';
 import { CChart } from '@coreui/react-chartjs';
-import { cilMediaPlay, cilMediaStop, cilTrash, cilCalendar, cilClock, cilList, cilOptions } from '@coreui/icons';
+import { cilMediaPlay, cilMediaStop, cilTrash, cilCalendar, cilClock, cilList, cilOptions, cilInfo } from '@coreui/icons';
 import CIcon from '@coreui/icons-react';
+import * as cronParser from 'cron-parser';
+import cronstrue from 'cronstrue/i18n';
+
+// 使用cron-parser检查cron表达式是否有效
+const isValidCron = (cronExpression) => {
+    if (!cronExpression || cronExpression.trim() === '') return false;
+
+    try {
+        // 尝试解析cron表达式，如果成功则表达式有效
+        cronParser.CronExpressionParser.parse(cronExpression);
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
+// 将cron表达式转换为人类可读的中文描述
+const cronToHumanReadable = (cronExpression) => {
+    if (!isValidCron(cronExpression)) return "无效的cron表达式";
+
+    try {
+        // 使用cronstrue库将cron表达式转换为中文描述
+        return cronstrue.toString(cronExpression, { locale: 'zh_CN' });
+    } catch (e) {
+        return "无法解析的cron表达式";
+    }
+};
+
+// 预测下次执行时间
+const getNextRunTime = (cronExpression) => {
+    if (!isValidCron(cronExpression)) return "无法预测";
+
+    try {
+        // 使用cron-parser获取下次执行时间
+        const interval = cronParser.parseExpression(cronExpression);
+        const nextDate = interval.next().toDate();
+
+        if (!nextDate) return "无法预测";
+
+        // 格式化为中文本地时间
+        return nextDate.toLocaleString('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+    } catch (e) {
+        return "无法预测";
+    }
+};
 
 const TaskScheduler = () => {
     const dispatch = useDispatch();
-    const [taskName, setTaskName] = useState('');
-    const [condaEnv, setCondaEnv] = useState('');
-    const [scriptPath, setScriptPath] = useState('');
-    const [repeat, setRepeat] = useState('none');
-    const [scheduledDate, setScheduledDate] = useState('');
-    const [scheduledTime, setScheduledTime] = useState('');
+    const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm({
+        defaultValues: {
+            taskName: '',
+            condaEnv: '',
+            scriptPath: '',
+            scheduleType: 'immediate',
+            cronExpression: '',
+            scheduledDate: '',
+            scheduledTime: ''
+        }
+    });
     const [advancedVisible, setAdvancedVisible] = useState(false);
     const [taskDetailsVisible, setTaskDetailsVisible] = useState(false);
     const [selectedTask, setSelectedTask] = useState(null);
+    const [activeScheduleTab, setActiveScheduleTab] = useState(1);
+
+    // 监听scheduleType字段的变化
+    const scheduleType = watch('scheduleType');
+    const cronExpression = watch('cronExpression');
+
+    // 自定义cron表达式相关状态
+    const [cronValid, setCronValid] = useState(true);
+    const [cronDescription, setCronDescription] = useState("");
+    const [nextRunTime, setNextRunTime] = useState("");
 
     // 从Redux store获取状态
     const { taskList, taskHistory, loading: tasksLoading, error: tasksError } = useSelector(state => state.tasks);
@@ -66,39 +142,58 @@ const TaskScheduler = () => {
         dispatch(fetchEnvironmentsRequest());
     }, [dispatch]);
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    // 验证cron表达式并更新描述
+    useEffect(() => {
+        if (cronExpression) {
+            const valid = isValidCron(cronExpression);
+            setCronValid(valid);
 
-        if (!taskName || !condaEnv || !scriptPath) {
-            return;
+            if (valid) {
+                setCronDescription(cronToHumanReadable(cronExpression));
+                setNextRunTime(getNextRunTime(cronExpression));
+            } else {
+                setCronDescription("无效的cron表达式");
+                setNextRunTime("无法预测");
+            }
+        } else {
+            setCronValid(true);
+            setCronDescription("");
+            setNextRunTime("");
         }
+    }, [cronExpression]);
 
+    const onSubmit = (data) => {
         const taskData = {
-            task_name: taskName,
-            conda_env: condaEnv,
-            script: scriptPath
+            task_name: data.taskName,
+            conda_env: data.condaEnv,
+            script: data.scriptPath
         };
 
-        // 如果设置了调度时间
-        if (repeat !== 'none') {
-            taskData.schedule = {
-                type: repeat,
-                datetime: scheduledDate && scheduledTime ?
-                    `${scheduledDate}T${scheduledTime}` :
-                    null
-            };
+        // 根据调度类型设置对应参数
+        if (data.scheduleType === 'once') {
+            // 一次性延迟执行
+            const scheduledDateTime = new Date(`${data.scheduledDate}T${data.scheduledTime}`);
+            const now = new Date();
+            const delaySeconds = Math.floor((scheduledDateTime - now) / 1000);
+
+            if (delaySeconds > 0) {
+                taskData.delay_seconds = delaySeconds;
+            }
+        } else if (data.scheduleType === 'cron') {
+            // 使用cron表达式
+            if (isValidCron(data.cronExpression)) {
+                taskData.cron_expression = data.cronExpression;
+            } else {
+                alert('请输入有效的cron表达式');
+                return;
+            }
         }
 
         // 分发创建任务请求action
         dispatch(createTaskRequest(taskData));
 
         // 重置表单
-        setTaskName('');
-        setCondaEnv('');
-        setScriptPath('');
-        setRepeat('none');
-        setScheduledDate('');
-        setScheduledTime('');
+        reset();
     };
 
     const handleStopTask = async (taskId) => {
@@ -198,6 +293,28 @@ const TaskScheduler = () => {
     if (tasksLoading && taskList.length === 0 && environments.length === 0) {
         return <div className="text-center mt-5"><CSpinner color="primary" /></div>;
     }
+
+    // 预设的常用cron表达式
+    const commonCronPatterns = [
+        { label: '每分钟', value: '* * * * *' },
+        { label: '每小时', value: '0 * * * *' },
+        { label: '每天0点', value: '0 0 * * *' },
+        { label: '每天8点', value: '0 8 * * *' },
+        { label: '每周一8点', value: '0 8 * * 1' },
+        { label: '每月1号0点', value: '0 0 1 * *' }
+    ];
+
+    // 设置预设的cron表达式并切换到编辑选项卡
+    const setPresetCron = (cronValue) => {
+        // 先确保值是有效的，避免错误提示
+        setCronValid(true);
+        setCronDescription(cronToHumanReadable(cronValue));
+        setNextRunTime(getNextRunTime(cronValue));
+
+        // 然后设置值并切换到编辑选项卡
+        setValue('cronExpression', cronValue);
+        setActiveScheduleTab(1); // 自动切换到编辑选项卡
+    };
 
     return (
         <div>
@@ -308,7 +425,7 @@ const TaskScheduler = () => {
                     <h5 className="mb-0">创建新任务</h5>
                 </CCardHeader>
                 <CCardBody>
-                    <CForm onSubmit={handleSubmit}>
+                    <CForm onSubmit={handleSubmit(onSubmit)}>
                         <CRow>
                             <CCol md={6}>
                                 <div className="mb-3">
@@ -316,10 +433,9 @@ const TaskScheduler = () => {
                                     <CFormInput
                                         type="text"
                                         id="taskName"
-                                        value={taskName}
-                                        onChange={(e) => setTaskName(e.target.value)}
-                                        required
+                                        {...register('taskName', { required: true })}
                                     />
+                                    {errors.taskName && <span className="text-danger">任务名称是必填项</span>}
                                 </div>
                             </CCol>
                             <CCol md={6}>
@@ -327,15 +443,14 @@ const TaskScheduler = () => {
                                     <CFormLabel htmlFor="condaEnv">Conda环境</CFormLabel>
                                     <CFormSelect
                                         id="condaEnv"
-                                        value={condaEnv}
-                                        onChange={(e) => setCondaEnv(e.target.value)}
-                                        required
+                                        {...register('condaEnv', { required: true })}
                                     >
                                         <option value="">选择环境</option>
                                         {environments.map(env => (
-                                            <option key={env.env_id} value={env.name}>{env.name}</option>
+                                            <option key={env.name} value={env.name}>{env.name}</option>
                                         ))}
                                     </CFormSelect>
+                                    {errors.condaEnv && <span className="text-danger">Conda环境是必填项</span>}
                                 </div>
                             </CCol>
                         </CRow>
@@ -344,29 +459,48 @@ const TaskScheduler = () => {
                             <CFormInput
                                 type="text"
                                 id="scriptPath"
-                                value={scriptPath}
-                                onChange={(e) => setScriptPath(e.target.value)}
+                                {...register('scriptPath', { required: true })}
                                 placeholder="例如: /path/to/script.py"
-                                required
                             />
+                            {errors.scriptPath && <span className="text-danger">脚本路径是必填项</span>}
                         </div>
 
                         <div className="mb-3">
-                            <CFormLabel htmlFor="repeat">执行方式</CFormLabel>
-                            <CFormSelect
-                                id="repeat"
-                                value={repeat}
-                                onChange={(e) => setRepeat(e.target.value)}
-                            >
-                                <option value="none">立即执行</option>
-                                <option value="once">定时执行（一次）</option>
-                                <option value="daily">每日执行</option>
-                                <option value="weekly">每周执行</option>
-                                <option value="monthly">每月执行</option>
-                            </CFormSelect>
+                            <CFormLabel>执行方式</CFormLabel>
+                            <div className="mt-2">
+                                <CFormCheck
+                                    type="radio"
+                                    name="scheduleType"
+                                    id="scheduleImmediate"
+                                    label="立即执行"
+                                    value="immediate"
+                                    checked={scheduleType === 'immediate'}
+                                    onChange={() => setValue('scheduleType', 'immediate')}
+                                />
+                                <CFormCheck
+                                    type="radio"
+                                    name="scheduleType"
+                                    id="scheduleOnce"
+                                    label="定时执行（一次）"
+                                    value="once"
+                                    checked={scheduleType === 'once'}
+                                    onChange={() => setValue('scheduleType', 'once')}
+                                    className="mt-2"
+                                />
+                                <CFormCheck
+                                    type="radio"
+                                    name="scheduleType"
+                                    id="scheduleCron"
+                                    label="高级调度（Cron表达式）"
+                                    value="cron"
+                                    checked={scheduleType === 'cron'}
+                                    onChange={() => setValue('scheduleType', 'cron')}
+                                    className="mt-2"
+                                />
+                            </div>
                         </div>
 
-                        {repeat !== 'none' && (
+                        {scheduleType === 'once' && (
                             <CRow>
                                 <CCol md={6}>
                                     <div className="mb-3">
@@ -374,10 +508,9 @@ const TaskScheduler = () => {
                                         <CFormInput
                                             type="date"
                                             id="scheduledDate"
-                                            value={scheduledDate}
-                                            onChange={(e) => setScheduledDate(e.target.value)}
-                                            required={repeat !== 'none'}
+                                            {...register('scheduledDate', { required: scheduleType === 'once' })}
                                         />
+                                        {errors.scheduledDate && <span className="text-danger">执行日期是必填项</span>}
                                     </div>
                                 </CCol>
                                 <CCol md={6}>
@@ -386,13 +519,98 @@ const TaskScheduler = () => {
                                         <CFormInput
                                             type="time"
                                             id="scheduledTime"
-                                            value={scheduledTime}
-                                            onChange={(e) => setScheduledTime(e.target.value)}
-                                            required={repeat !== 'none'}
+                                            {...register('scheduledTime', { required: scheduleType === 'once' })}
                                         />
+                                        {errors.scheduledTime && <span className="text-danger">执行时间是必填项</span>}
                                     </div>
                                 </CCol>
                             </CRow>
+                        )}
+
+                        {scheduleType === 'cron' && (
+                            <div className="mb-3">
+                                <CNav variant="tabs" role="tablist" className="mb-3">
+                                    <CNavItem>
+                                        <CNavLink
+                                            active={activeScheduleTab === 1}
+                                            onClick={() => setActiveScheduleTab(1)}
+                                        >
+                                            输入表达式
+                                        </CNavLink>
+                                    </CNavItem>
+                                    <CNavItem>
+                                        <CNavLink
+                                            active={activeScheduleTab === 2}
+                                            onClick={() => setActiveScheduleTab(2)}
+                                        >
+                                            常用表达式
+                                        </CNavLink>
+                                    </CNavItem>
+                                </CNav>
+                                <CTabContent>
+                                    <CTabPane role="tabpanel" visible={activeScheduleTab === 1}>
+                                        <CFormLabel htmlFor="cronExpression">Cron表达式</CFormLabel>
+                                        <CFormInput
+                                            type="text"
+                                            id="cronExpression"
+                                            {...register('cronExpression', {
+                                                required: scheduleType === 'cron',
+                                                validate: value => scheduleType !== 'cron' || isValidCron(value) || "请输入有效的cron表达式"
+                                            })}
+                                            placeholder="分 时 日 月 周 (例如: 0 8 * * 1-5)"
+                                            className={!cronValid && cronExpression ? "is-invalid" : ""}
+                                        />
+                                        {errors.cronExpression && <span className="text-danger">{errors.cronExpression.message}</span>}
+                                        <CFormText>
+                                            格式: 分钟 小时 日 月 周 (0-59 0-23 1-31 1-12 0-6)
+                                        </CFormText>
+
+                                        {cronExpression && (
+                                            <div className="mt-3">
+                                                <div className={`p-3 rounded ${cronValid ? 'bg-light' : 'bg-danger bg-opacity-10'}`}>
+                                                    <div className="mb-2">
+                                                        <strong>表达式含义: </strong>
+                                                        <span>{cronDescription}</span>
+                                                    </div>
+                                                    {cronValid && (
+                                                        <div>
+                                                            <strong>下次执行: </strong>
+                                                            <span>{nextRunTime}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </CTabPane>
+                                    <CTabPane role="tabpanel" visible={activeScheduleTab === 2}>
+                                        <div className="mb-3">
+                                            <CFormLabel>选择常用表达式</CFormLabel>
+                                            <div className="row g-3 mt-2">
+                                                {commonCronPatterns.map((pattern, index) => (
+                                                    <div className="col-md-4" key={index}>
+                                                        <div
+                                                            className="d-flex align-items-center p-2 border rounded cursor-pointer"
+                                                            onClick={() => setPresetCron(pattern.value)}
+                                                            style={{ cursor: 'pointer' }}
+                                                        >
+                                                            <div>
+                                                                <div className="fw-bold">{pattern.label}</div>
+                                                                <small className="text-muted">{pattern.value}</small>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="alert alert-info d-flex align-items-center" role="alert">
+                                            <CIcon icon={cilInfo} className="flex-shrink-0 me-2" />
+                                            <div>
+                                                选择后会自动填入到表达式输入框，您也可以进一步修改
+                                            </div>
+                                        </div>
+                                    </CTabPane>
+                                </CTabContent>
+                            </div>
                         )}
 
                         <div className="mt-3 mb-3">

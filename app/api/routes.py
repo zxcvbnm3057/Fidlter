@@ -23,17 +23,15 @@ def list_conda_environments():
     formatted_envs = []
 
     if "envs" in conda_envs:
-        for idx, env_path in enumerate(conda_envs.get("envs", [])):
-            env_id = idx + 1
+        for env_path in conda_envs.get("envs", []):
             env_name = os.path.basename(env_path)
 
             # 获取环境详情以获取更准确的信息
-            env_details = conda_manager.get_environment_details(env_id)
+            env_details = conda_manager.get_environment_details(env_name)
 
             if env_details.get("success", False):
                 details = env_details.get("output", {})
                 formatted_envs.append({
-                    "env_id": env_id,
                     "name": env_name,
                     "python_version": details.get("python_version", "未知"),
                     "packages": details.get("packages", []),  # 返回实际的包列表
@@ -43,7 +41,6 @@ def list_conda_environments():
             else:
                 # 如果无法获取详情，添加基本信息
                 formatted_envs.append({
-                    "env_id": env_id,
                     "name": env_name,
                     "python_version": "未知",
                     "packages": [],
@@ -62,23 +59,11 @@ def create_conda_environment():
 
     result = conda_manager.create_environment(name)
     if result.get('success'):
-        # 获取新创建环境的ID
-        env_id = None
-        env_list_result = conda_manager.list_environments()
-        if env_list_result.get("success", False):
-            conda_envs = env_list_result.get("output", {})
-            envs = conda_envs.get("envs", [])
-            for idx, env_path in enumerate(envs):
-                if os.path.basename(env_path) == name:
-                    env_id = idx + 1
-                    break
-
         # 格式化为符合文档要求的响应
         return jsonify({
             "success": True,
             "message": "Environment created successfully",
             "environment": {
-                "env_id": env_id,
                 "name": name,
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
@@ -93,67 +78,41 @@ def create_conda_environment():
         return jsonify(result), 400
 
 
-@api.route('/conda/environment/<int:env_id>', methods=['DELETE'])
-def delete_conda_environment(env_id):
-    # 根据环境ID获取环境名称
-    env_name = None
-    env_list_result = conda_manager.list_environments()
-    if env_list_result.get("success", False):
-        # 解析conda环境列表
-        conda_envs = env_list_result.get("output", {})
-        envs = conda_envs.get("envs", [])
-        if len(envs) >= env_id and env_id > 0:
-            env_path = envs[env_id - 1]  # env_id从1开始，数组索引从0开始
-            env_name = os.path.basename(env_path)
-
-    if not env_name:
-        return jsonify({"success": False, "message": "Environment not found"}), 404
-
+@api.route('/conda/environment/<env_name>', methods=['DELETE'])
+def delete_conda_environment(env_name):
+    """删除指定的Conda环境"""
     result = conda_manager.delete_environment(env_name)
     if result.get('success'):
         return '', 204  # 文档规定删除成功返回204无内容
     else:
-        if "in use by tasks" in result.get('error', ''):
+        if "not found" in result.get('error', '').lower():
+            return jsonify({"success": False, "message": "Environment not found"}), 404
+        elif "in use by tasks" in result.get('error', ''):
             return jsonify({
                 "success": False,
                 "message": "Cannot delete environment that is referenced by tasks",
                 "error": "Environment is in use by tasks",
                 "referencing_tasks": result.get("referencing_tasks", [])
             }), 400
-        return jsonify({"success": False, "message": "Environment not found"}), 404
+        return jsonify({"success": False, "message": "Failed to delete environment"}), 400
 
 
-@api.route('/conda/environment/<int:env_id>', methods=['PUT'])
-def update_conda_environment(env_id):
+@api.route('/conda/environment/<env_name>', methods=['PUT'])
+def update_conda_environment(env_name):
     """修改Conda环境名称"""
     data = request.json
     new_name = data.get('new_name')
     if not new_name:
         return jsonify({"success": False, "message": "New name is required"}), 400
 
-    # 根据环境ID获取环境名称
-    old_name = None
-    env_list_result = conda_manager.list_environments()
-    if env_list_result.get("success", False):
-        # 解析conda环境列表
-        conda_envs = env_list_result.get("output", {})
-        envs = conda_envs.get("envs", [])
-        if len(envs) >= env_id and env_id > 0:
-            env_path = envs[env_id - 1]  # env_id从1开始，数组索引从0开始
-            old_name = os.path.basename(env_path)
-
-    if not old_name:
-        return jsonify({"success": False, "message": "Environment not found"}), 404
-
-    result = conda_manager.rename_environment(old_name, new_name)
+    result = conda_manager.rename_environment(env_name, new_name)
     if result.get('success'):
         # 根据文档要求格式化返回结果
         return jsonify({
             "success": True,
             "message": "Environment renamed successfully",
-            "old_name": old_name,
+            "old_name": env_name,
             "new_name": new_name,
-            "env_id": env_id,
             "updated_tasks_count": result.get("updated_tasks_count", 0)
         }), 200
     else:
@@ -168,27 +127,13 @@ def update_conda_environment(env_id):
         return jsonify(result), 400
 
 
-@api.route('/conda/environment/<int:env_id>/packages', methods=['POST'])
-def install_packages(env_id):
+@api.route('/conda/environment/<env_name>/packages', methods=['POST'])
+def install_packages(env_name):
     """在指定Conda环境中安装包"""
     data = request.json
     packages = data.get('packages', [])
     if not packages:
         return jsonify({"success": False, "message": "No packages specified"}), 400
-
-    # 根据环境ID获取环境名称
-    env_name = None
-    env_list_result = conda_manager.list_environments()
-    if env_list_result.get("success", False):
-        # 解析conda环境列表
-        conda_envs = env_list_result.get("output", {})
-        envs = conda_envs.get("envs", [])
-        if len(envs) >= env_id and env_id > 0:
-            env_path = envs[env_id - 1]  # env_id从1开始，数组索引从0开始
-            env_name = os.path.basename(env_path)
-
-    if not env_name:
-        return jsonify({"success": False, "message": "Environment not found"}), 404
 
     result = conda_manager.install_packages(env_name, packages)
     if result.get('success'):
@@ -220,27 +165,13 @@ def install_packages(env_id):
             }), 400
 
 
-@api.route('/conda/environment/<int:env_id>/packages', methods=['DELETE'])
-def remove_packages(env_id):
+@api.route('/conda/environment/<env_name>/packages', methods=['DELETE'])
+def remove_packages(env_name):
     """从指定Conda环境中移除包"""
     data = request.json
     packages = data.get('packages', [])
     if not packages:
         return jsonify({"success": False, "message": "No packages specified"}), 400
-
-    # 根据环境ID获取环境名称
-    env_name = None
-    env_list_result = conda_manager.list_environments()
-    if env_list_result.get("success", False):
-        # 解析conda环境列表
-        conda_envs = env_list_result.get("output", {})
-        envs = conda_envs.get("envs", [])
-        if len(envs) >= env_id and env_id > 0:
-            env_path = envs[env_id - 1]  # env_id从1开始，数组索引从0开始
-            env_name = os.path.basename(env_path)
-
-    if not env_name:
-        return jsonify({"success": False, "message": "Environment not found"}), 404
 
     result = conda_manager.remove_packages(env_name, packages)
     if result.get('success'):
@@ -273,8 +204,7 @@ def schedule_task():
     """创建新任务，支持cron表达式或延时执行，以及上传requirements和复用环境"""
     data = request.json
     script = data.get('script')
-    env_id = data.get('env_id')
-    conda_env = data.get('conda_env')  # 保留向后兼容性
+    conda_env = data.get('conda_env')
     task_name = data.get('task_name')
     requirements = data.get('requirements')
     reuse_env = data.get('reuse_env', False)
@@ -292,28 +222,12 @@ def schedule_task():
     # 基本参数验证
     if not script:
         return jsonify({"success": False, "message": "Script is required"}), 400
-    if not env_id and not conda_env:
-        return jsonify({"success": False, "message": "Environment ID or name is required"}), 400
+    if not conda_env:
+        return jsonify({"success": False, "message": "Environment name is required"}), 400
 
     # 设置conda_manager（如果尚未设置）
     if not task_scheduler.conda_manager:
         task_scheduler.set_conda_manager(conda_manager)
-
-    # 如果提供了环境ID，优先使用环境ID
-    if env_id:
-        # 根据环境ID获取环境名称
-        env_name = None
-        env_list_result = conda_manager.list_environments()
-        if env_list_result.get("success", False):
-            for env in env_list_result.get("output", {}).get("envs", []):
-                if env.get("env_id") == env_id:
-                    env_name = env.get("name")
-                    break
-
-        if not env_name:
-            return jsonify({"success": False, "message": f"Environment with ID {env_id} not found"}), 404
-
-        conda_env = env_name
 
     # 创建任务
     result = task_scheduler.schedule_task(script_path=script,
@@ -323,15 +237,6 @@ def schedule_task():
                                           reuse_env=reuse_env,
                                           cron_expression=cron_expression,
                                           delay_seconds=delay_seconds)
-
-    # 在成功创建任务后添加环境ID信息
-    if result.get('success', False) and 'task' in result:
-        env_list_result = conda_manager.list_environments()
-        if env_list_result.get("success", False):
-            for env in env_list_result.get("output", {}).get("envs", []):
-                if env.get("name") == conda_env:
-                    result['task']['env_id'] = env.get("env_id")
-                    break
 
     if result.get('success', False):
         return jsonify(result), 201
@@ -351,7 +256,6 @@ def get_tasks():
             "status": task.get("status"),
             "script_path": task.get("script_path"),
             "conda_env": task.get("conda_env"),
-            "env_id": task.get("env_id"),
             "created_at": task.get("created_at"),
             "cron_expression": task.get("cron_expression"),
             "next_run_time_formatted": task.get("next_run_time"),
@@ -441,19 +345,21 @@ def get_conda_stats():
         return jsonify({"message": "Failed to get environment statistics", "error": str(e)}), 500
 
 
-@api.route('/conda/environment/<int:env_id>', methods=['GET'])
-def get_conda_environment_details(env_id):
+@api.route('/conda/environment/<env_name>', methods=['GET'])
+def get_conda_environment_details(env_name):
     """获取特定Conda环境的详细信息"""
     try:
-        details_result = conda_manager.get_environment_details(env_id)
+        details_result = conda_manager.get_environment_details(env_name)
         if details_result.get("success", False):
             return jsonify(details_result.get("output", {}))
         else:
             # 如果环境不存在，返回404状态码
             if "not found" in details_result.get("message", "").lower():
                 return jsonify({
-                    "message": details_result.get("message", "Environment not found"),
-                    "error": details_result.get("error", "Environment with this ID does not exist")
+                    "message":
+                    details_result.get("message", "Environment not found"),
+                    "error":
+                    details_result.get("error", f"Environment with name '{env_name}' does not exist")
                 }), 404
             # 其他错误返回500状态码
             return jsonify({

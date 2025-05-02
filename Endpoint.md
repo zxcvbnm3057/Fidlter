@@ -159,7 +159,6 @@
   ```json
   [
     {
-      "env_id": 1,
       "name": "环境名称",
       "python_version": "Python版本",
       "packages": ["包列表"],
@@ -185,7 +184,6 @@
     "active_environments": 3,          // 活跃环境数
     "total_disk_usage": 8.5,           // 总磁盘使用量（GB）
     "latest_created": {                // 最近创建的环境
-      "env_id": 5,
       "name": "环境名称",
       "created_at": "2025-05-01 14:30:00"
     },
@@ -226,7 +224,7 @@
 **请求**:
 
 - 方法: `GET`
-- URL: `/api/conda/environment/<env_id>`
+- URL: `/api/conda/environment/<env_name>`
 
 **响应**:
 
@@ -234,7 +232,6 @@
 - 内容: 环境详细信息
   ```json
   {
-    "env_id": 1,
     "name": "环境名称",
     "python_version": "3.9.7",
     "created_at": "2025-04-15",
@@ -266,7 +263,7 @@
   ```
 
 **说明**:
-- 此接口通过环境ID获取指定环境的详细信息
+- 此接口通过环境名称获取指定环境的详细信息
 - `python_version` 是环境中安装的Python版本
 - `created_at` 是环境的创建日期
 - `usage_stats` 包含环境的使用统计信息，如总任务数、成功率等
@@ -297,7 +294,6 @@
     "success": true,
     "message": "Environment created successfully",
     "environment": {
-      "env_id": 1,
       "name": "环境名称",
       "created_at": "创建时间"
     }
@@ -309,7 +305,7 @@
 **请求**:
 
 - 方法: `PUT`
-- URL: `/api/conda/environment/<env_id>`
+- URL: `/api/conda/environment/<env_name>`
 - Content-Type: `application/json`
 - Cookie: `session=<会话ID>`
 
@@ -332,7 +328,6 @@
     "message": "Environment renamed successfully",
     "old_name": "原环境名称",
     "new_name": "新环境名称",
-    "env_id": 1,
     "updated_tasks_count": 2
   }
   ```
@@ -381,7 +376,7 @@
 **请求**:
 
 - 方法: `POST`
-- URL: `/api/conda/environment/<env_id>/packages`
+- URL: `/api/conda/environment/<env_name>/packages`
 - Content-Type: `application/json`
 - Cookie: `session=<会话ID>`
 
@@ -467,7 +462,7 @@
 **请求**:
 
 - 方法: `DELETE`
-- URL: `/api/conda/environment/<env_id>/packages`
+- URL: `/api/conda/environment/<env_name>/packages`
 - Content-Type: `application/json`
 - Cookie: `session=<会话ID>`
 
@@ -538,7 +533,7 @@
 **请求**:
 
 - 方法: `DELETE`
-- URL: `/api/conda/environment/<env_id>`
+- URL: `/api/conda/environment/<env_name>`
 
 **响应**:
 
@@ -599,8 +594,7 @@
 ```json
 {
   "script": "Python脚本路径或内容",
-  "env_id": 1,                             // 推荐使用环境ID
-  "conda_env": "Conda环境名称",              // 向后兼容，推荐使用env_id
+  "conda_env": "Conda环境名称",
   "task_name": "任务名称（可选）",
   "requirements": "requirements.txt的内容（可选）",
   "reuse_env": false,
@@ -612,8 +606,7 @@
 **参数说明**:
 
 - `script`: 必填，Python脚本的路径或内容
-- `env_id`: 推荐，任务执行时使用的Conda环境ID
-- `conda_env`: 可选，任务执行时使用的Conda环境名称（如果同时提供env_id和conda_env，优先使用env_id）
+- `conda_env`: 必填，任务执行时使用的Conda环境名称
 - `task_name`: 可选，任务的名称，如不提供则使用脚本文件名
 - `requirements`: 可选，requirements.txt的内容，用于安装任务所需的依赖
 - `reuse_env`: 可选，是否复用现有环境（true/false）
@@ -641,7 +634,6 @@
       "task_name": "任务名称",
       "script_path": "脚本内容",
       "conda_env": "环境名称",
-      "env_id": 1,
       "status": "scheduled",
       "created_at": "创建时间",
       "cron_expression": "*/10 * * * *",
@@ -748,7 +740,6 @@
       "status": "completed",
       "script_path": "脚本内容",
       "conda_env": "环境名称",
-      "env_id": 1,
       "created_at": "创建时间",
       "cron_expression": "*/10 * * * *",
       "next_run_time_formatted": "2025-05-02 15:30:00",
@@ -762,7 +753,6 @@
       "status": "scheduled",
       "script_path": "脚本内容",
       "conda_env": "环境名称",
-      "env_id": 2,
       "created_at": "创建时间",
       "cron_expression": null,
       "next_run_time_formatted": "2025-05-02 18:00:00",
@@ -797,7 +787,6 @@
       "status": "completed",
       "script_path": "脚本内容",
       "conda_env": "环境名称",
-      "env_id": 1,
       "created_at": "创建时间",
       "cron_expression": "*/10 * * * *",
       "next_run_time": "下次执行时间",

@@ -82,18 +82,18 @@ const CondaManager = () => {
         dispatch(hideCreateModal());
     };
 
-    const handleDeleteEnvironment = (envId) => {
+    const handleDeleteEnvironment = (envName) => {
         if (!window.confirm('确定要删除这个环境吗？')) return;
 
-        // 分发删除环境请求action
-        dispatch(deleteEnvironmentRequest({ envId }));
+        // 分发删除环境请求action，使用环境名称
+        dispatch(deleteEnvironmentRequest({ envName }));
     };
 
     const handleRenameEnvironment = () => {
         if (!editEnvName.trim() || !selectedEnv) return;
 
-        // 分发重命名环境请求action
-        dispatch(renameEnvironmentRequest({ envId: selectedEnv.env_id, newName: editEnvName }));
+        // 分发重命名环境请求action，使用环境名称替代环境ID
+        dispatch(renameEnvironmentRequest({ envName: selectedEnv.name, newName: editEnvName }));
         dispatch(hideEditModal());
     };
 
@@ -108,9 +108,9 @@ const CondaManager = () => {
 
         if (packagesArray.length === 0) return;
 
-        // 分发安装包请求action
+        // 分发安装包请求action，使用环境名称替代环境ID
         dispatch(installPackagesRequest({
-            envId: selectedEnv.env_id,
+            envName: selectedEnv.name,
             packages: packagesArray
         }));
 
@@ -120,9 +120,9 @@ const CondaManager = () => {
     const handleRemovePackages = () => {
         if (!selectedPackages.length || !selectedEnv) return;
 
-        // 分发删除包请求action
+        // 分发删除包请求action，使用环境名称替代环境ID
         dispatch(removePackagesRequest({
-            envId: selectedEnv.env_id,
+            envName: selectedEnv.name,
             packages: selectedPackages
         }));
 
@@ -131,7 +131,7 @@ const CondaManager = () => {
 
     const openDetails = (env) => {
         dispatch(showDetailsModal(env));
-        dispatch(fetchEnvDetailsRequest({ envId: env.env_id }));
+        dispatch(fetchEnvDetailsRequest({ envName: env.name }));
     };
 
     const openEdit = (env) => {
@@ -306,8 +306,8 @@ const CondaManager = () => {
                                     const usagePercent = usageData ? usageData.usage_percent : 0;
 
                                     return (
-                                        <tr key={env.env_id}>
-                                            <td>{env.env_id}</td>
+                                        <tr key={env.name}>
+                                            <td>{environments.indexOf(env) + 1}</td>
                                             <td>{env.name}</td>
                                             <td>
                                                 <CBadge color="success">活跃</CBadge>
@@ -332,7 +332,7 @@ const CondaManager = () => {
                                                 <CButton color="warning" size="sm" className="me-2" onClick={() => openEdit(env)}>
                                                     <CIcon icon={cilPencil} />
                                                 </CButton>
-                                                <CButton color="danger" size="sm" onClick={() => handleDeleteEnvironment(env.env_id)}>
+                                                <CButton color="danger" size="sm" onClick={() => handleDeleteEnvironment(env.name)}>
                                                     <CIcon icon={cilTrash} />
                                                 </CButton>
                                             </td>
@@ -389,7 +389,6 @@ const CondaManager = () => {
                                 <CRow>
                                     <CCol md={6}>
                                         <h6>基本信息</h6>
-                                        <p><strong>环境ID:</strong> {envDetails.env_id}</p>
                                         <p><strong>环境名称:</strong> {envDetails.name}</p>
                                         <p><strong>Python版本:</strong> {envDetails.python_version || '未知'}</p>
                                         <p><strong>创建日期:</strong> {envDetails.created_at || '未知'}</p>
@@ -495,7 +494,7 @@ const CondaManager = () => {
                             onChange={(e) => dispatch(setNewPackages(e.target.value))}
                             placeholder="输入要安装的包名，每行一个或用逗号分隔，例如：numpy,pandas,matplotlib>=3.4.0"
                         />
-                        <small className="text-muted">提示：可以指定版本，例如 numpy==1.20.0，也可以使用 >= 指定最低版本</small>
+                        <small className="text-muted">提示：可以指定版本，例如 numpy==1.20.0，也可以使用 {'>='} 指定最低版本</small>
                     </div>
                 </CModalBody>
                 <CModalFooter>

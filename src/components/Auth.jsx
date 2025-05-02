@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import axios from '../utils/axios';
+import { useForm } from 'react-hook-form';
 import {
     CForm,
     CFormLabel,
@@ -17,20 +18,18 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 const Auth = () => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [loading, setLoading] = useState(false);
+    const { register, handleSubmit, formState: { errors } } = useForm();
+    const [error, setError] = React.useState('');
+    const [loading, setLoading] = React.useState(false);
     const navigate = useNavigate();
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
+    const onSubmit = async (data) => {
         setError('');
         setLoading(true);
 
         try {
             // 修改为后端API文档中定义的路径
-            const response = await axios.post('/login', { username, password });
+            const response = await axios.post('/login', data);
 
             // 不再存储token，使用Cookie认证 (Cookie由后端设置)
             if (response.data.message === "Login successful") {
@@ -54,30 +53,31 @@ const Auth = () => {
                         <CCardBody className="p-4">
                             <CCardTitle component="h2" className="text-center mb-4">登录系统</CCardTitle>
                             {error && <CAlert color="danger">{error}</CAlert>}
-                            <CForm onSubmit={handleSubmit}>
+                            <CForm onSubmit={handleSubmit(onSubmit)}>
                                 <div className="mb-3">
                                     <CFormLabel htmlFor="username">用户名</CFormLabel>
                                     <CFormInput
                                         type="text"
                                         id="username"
-                                        value={username}
-                                        onChange={(e) => setUsername(e.target.value)}
-                                        required
+                                        {...register('username', { required: '用户名是必填项' })}
                                     />
+                                    {errors.username && <CAlert color="danger">{errors.username.message}</CAlert>}
                                 </div>
                                 <div className="mb-3">
                                     <CFormLabel htmlFor="password">密码</CFormLabel>
                                     <CFormInput
                                         type="password"
                                         id="password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
+                                        {...register('password', { required: '密码是必填项' })}
                                     />
+                                    {errors.password && <CAlert color="danger">{errors.password.message}</CAlert>}
                                 </div>
                                 <CButton
                                     type="submit"
                                     color="primary"
+                                    className="w-100 mt-3"
+                                    disabled={loading}
+                                >
                                     className="w-100 mt-3"
                                     disabled={loading}
                                 >

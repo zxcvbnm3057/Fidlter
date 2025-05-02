@@ -50,7 +50,8 @@ function* fetchEnvStatsSaga() {
 // 获取环境详情
 function* fetchEnvDetailsSaga(action) {
     try {
-        const response = yield call(axios.get, `/api/conda/environment/${action.payload.envId}`);
+        // 使用环境名称而不是env_id来获取环境详情
+        const response = yield call(axios.get, `/api/conda/environment/${action.payload.envName}`);
         yield put(fetchEnvDetailsSuccess(response.data));
     } catch (error) {
         if (error.response?.status === 404) {
@@ -82,8 +83,9 @@ function* createEnvironmentSaga(action) {
 function* deleteEnvironmentSaga(action) {
     try {
         // 根据Endpoint文档，删除成功返回204状态码，无内容
-        yield call(axios.delete, `/api/conda/environment/${action.payload.envId}`);
-        yield put(deleteEnvironmentSuccess({ envId: action.payload.envId }));
+        // 使用环境名称而不是envId
+        yield call(axios.delete, `/api/conda/environment/${action.payload.envName}`);
+        yield put(deleteEnvironmentSuccess({ envName: action.payload.envName }));
         // 删除成功后重新获取环境列表和统计信息
         yield put(fetchEnvironmentsRequest());
         yield put(fetchEnvStatsRequest());
@@ -104,7 +106,7 @@ function* installPackagesSaga(action) {
     try {
         const response = yield call(
             axios.post,
-            `/api/conda/environment/${action.payload.envId}/packages`,
+            `/api/conda/environment/${action.payload.envName}/packages`,
             { packages: action.payload.packages }
         );
         // 修改成功返回处理，根据API返回的结构调整
@@ -133,13 +135,13 @@ function* renameEnvironmentSaga(action) {
     try {
         const response = yield call(
             axios.put,
-            `/api/conda/environment/${action.payload.envId}`,
+            `/api/conda/environment/${action.payload.envName}`,
             { new_name: action.payload.newName }
         );
         // 修改成功返回处理，根据API返回的结构调整
         yield put(renameEnvironmentSuccess({
             success: true,
-            env_id: action.payload.envId,
+            envName: action.payload.envName,
             new_name: action.payload.newName
         }));
         // 重命名成功后重新获取环境列表和统计信息
@@ -162,7 +164,7 @@ function* removePackagesSaga(action) {
     try {
         const response = yield call(
             axios.delete,
-            `/api/conda/environment/${action.payload.envId}/packages`,
+            `/api/conda/environment/${action.payload.envName}/packages`,
             { data: { packages: action.payload.packages } }
         );
         // 修改成功返回处理，根据API返回的结构调整
@@ -173,7 +175,7 @@ function* removePackagesSaga(action) {
             removed_packages: response.data.removed_packages
         }));
         // 操作成功后重新获取环境详情和环境列表
-        yield put(fetchEnvDetailsRequest({ envId: action.payload.envId }));
+        yield put(fetchEnvDetailsRequest({ envName: action.payload.envName }));
         yield put(fetchEnvironmentsRequest());
     } catch (error) {
         // 根据Endpoint文档处理可能的错误情况

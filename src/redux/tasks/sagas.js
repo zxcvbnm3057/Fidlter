@@ -55,51 +55,37 @@ function* createTaskSaga(action) {
         // 调整任务参数格式，将前端参数转换为API格式
         const taskData = { ...action.payload };
 
-        // 处理调度选项，转换为API支持的格式
-        if (taskData.schedule) {
-            // 如果是一次性延迟执行
-            if (taskData.schedule.type === 'once' && taskData.schedule.datetime) {
-                // 计算延迟秒数
-                const now = new Date();
-                const scheduledTime = new Date(taskData.schedule.datetime);
-                const delaySeconds = Math.floor((scheduledTime - now) / 1000);
-
-                if (delaySeconds > 0) {
-                    taskData.delay_seconds = delaySeconds;
-                }
-                // 删除前端特有的schedule参数
-                delete taskData.schedule;
-            }
-            // 如果是周期性执行，转换为cron表达式
-            else if (['daily', 'weekly', 'monthly'].includes(taskData.schedule.type)) {
-                // 简单的cron表达式转换示例
-                if (taskData.schedule.type === 'daily') {
-                    // 每天在指定时间执行
-                    const time = new Date(taskData.schedule.datetime || Date.now());
-                    taskData.cron_expression = `${time.getMinutes()} ${time.getHours()} * * *`;
-                } else if (taskData.schedule.type === 'weekly') {
-                    // 每周在指定时间执行
-                    const time = new Date(taskData.schedule.datetime || Date.now());
-                    taskData.cron_expression = `${time.getMinutes()} ${time.getHours()} * * ${time.getDay()}`;
-                } else if (taskData.schedule.type === 'monthly') {
-                    // 每月在指定日期和时间执行
-                    const time = new Date(taskData.schedule.datetime || Date.now());
-                    taskData.cron_expression = `${time.getMinutes()} ${time.getHours()} ${time.getDate()} * *`;
-                }
-                // 删除前端特有的schedule参数
-                delete taskData.schedule;
-            }
+        // 处理Conda环境
+        if (taskData.condaEnv) {
+            taskData.conda_env = taskData.condaEnv;
+            delete taskData.condaEnv;
         }
 
-        // 确保使用env_id而不是conda_env
-        if (taskData.condaEnvId) {
-            taskData.env_id = taskData.condaEnvId;
-            delete taskData.condaEnvId;
+        // 处理调度选项
+        if (taskData.scheduleType === 'once' && taskData.scheduledDate && taskData.scheduledTime) {
+            // 一次性延迟执行
+            const scheduledDateTime = new Date(`${taskData.scheduledDate}T${taskData.scheduledTime}`);
+            const now = new Date();
+            const delaySeconds = Math.floor((scheduledDateTime - now) / 1000);
+
+            if (delaySeconds > 0) {
+                taskData.delay_seconds = delaySeconds;
+            }
+        } else if (taskData.scheduleType === 'cron' && taskData.cronExpression) {
+            // 直接使用cron表达式
+            taskData.cron_expression = taskData.cronExpression;
         }
 
+        // 删除非API字段
+        delete taskData.scheduleType;
+        delete taskData.scheduledDate;
+        delete taskData.scheduledTime;
+        delete taskData.cronExpression;
+
+        // 发送请求
         const response = yield call(axios.post, '/api/tasks', taskData);
 
-        // 根据API文档调整响应处理
+        // 处理响应
         if (response.data.success) {
             yield put(createTaskSuccess(response.data.task || response.data));
             // 创建成功后重新获取任务列表

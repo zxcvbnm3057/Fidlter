@@ -1,0 +1,34 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-dockerfile
+{
+	"name": "Fidlter Development Container",
+	"build": {
+		// Sets the run context to one level up instead of the .devcontainer folder.
+		"context": "..",
+		// Update the 'dockerFile' property to use our development Dockerfile
+		"dockerfile": "../Dockerfile.dev"
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/conda:1": {
+			"addCondaForge": true,
+			"version": "latest"
+		},
+		"ghcr.io/devcontainers/features/node:1": {
+			"nodeGypDependencies": true,
+			"installYarnUsingApt": true,
+			"version": "18",
+			"pnpmVersion": "latest",
+			"nvmVersion": "latest"
+		}
+	},
+	// 使用主机网络模式
+	"runArgs": [
+		"--network=host"
+	],
+	// 挂载工作目录
+	"workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind,consistency=cached",
+	"workspaceFolder": "/app",
+	// 容器启动后可执行的命令
+	"postCreateCommand": "echo '开发环境已准备就绪'"
+	// 更多自定义配置可以根据需要添加
+}

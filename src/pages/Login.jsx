@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
+import { useForm } from 'react-hook-form';
 import { loginRequest } from '../redux/auth/reducer';
 import {
     CForm,
@@ -18,8 +19,7 @@ import {
 } from '@coreui/react';
 
 const Login = () => {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
+    const { register, handleSubmit, formState: { errors } } = useForm();
     const navigate = useNavigate();
     const dispatch = useDispatch();
 
@@ -33,10 +33,9 @@ const Login = () => {
         }
     }, [isAuthenticated, navigate]);
 
-    const handleLogin = (e) => {
-        e.preventDefault();
+    const onSubmit = (data) => {
         // 分发登录请求action，由saga处理API调用
-        dispatch(loginRequest({ username, password }));
+        dispatch(loginRequest(data));
     };
 
     return (
@@ -47,26 +46,24 @@ const Login = () => {
                         <CCardBody className="p-4">
                             <CCardTitle component="h2" className="text-center mb-4">登录系统</CCardTitle>
                             {error && <CAlert color="danger">{error}</CAlert>}
-                            <CForm onSubmit={handleLogin}>
+                            <CForm onSubmit={handleSubmit(onSubmit)}>
                                 <div className="mb-3">
                                     <CFormLabel htmlFor="username">用户名</CFormLabel>
                                     <CFormInput
                                         type="text"
                                         id="username"
-                                        value={username}
-                                        onChange={(e) => setUsername(e.target.value)}
-                                        required
+                                        {...register('username', { required: '用户名是必填项' })}
                                     />
+                                    {errors.username && <CAlert color="danger">{errors.username.message}</CAlert>}
                                 </div>
                                 <div className="mb-3">
                                     <CFormLabel htmlFor="password">密码</CFormLabel>
                                     <CFormInput
                                         type="password"
                                         id="password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
+                                        {...register('password', { required: '密码是必填项' })}
                                     />
+                                    {errors.password && <CAlert color="danger">{errors.password.message}</CAlert>}
                                 </div>
                                 <CButton
                                     type="submit"
