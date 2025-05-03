@@ -374,6 +374,145 @@ class Scheduler:
             "avg_memories": avg_memories
         }
 
+    def pause_task(self, task_id):
+        """暂停任务调度或执行
+        
+        参数:
+            task_id: 任务ID
+            
+        返回:
+            包含操作结果的字典
+        """
+        with self.lock:
+            # 查找任务
+            task = self._get_task_by_id(task_id)
+            if not task:
+                return {"success": False, "message": f"Task with ID {task_id} not found"}
+
+            # 检查任务状态
+            if task['status'] == 'running':
+                # 正在运行的任务，调用执行器的暂停方法
+                return self.executor.pause_task(task_id)
+            elif task['status'] == 'scheduled':
+                previous_status = task['status']
+
+                # 暂停任务
+                task['status'] = 'paused'
+
+                return {
+                    "success": True,
+                    "message": "Task paused successfully",
+                    "task": {
+                        "task_id": task_id,
+                        "task_name": task.get('task_name'),
+                        "status": 'paused',
+                        "previous_status": previous_status
+                    }
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Task cannot be paused",
+                    "error": f"Cannot pause a task with status: '{task['status']}'",
+                    "current_status": task['status']
+                }
+
+    def resume_task(self, task_id):
+        """恢复已暂停的任务
+        
+        参数:
+            task_id: 任务ID
+            
+        返回:
+            包含操作结果的字典
+        """
+        with self.lock:
+            # 查找任务
+            task = self._get_task_by_id(task_id)
+            if not task:
+                return {"success": False, "message": f"Task with ID {task_id} not found"}
+
+            # 检查任务是否有暂停的执行
+            execution_paused = self.executor.is_task_paused(task_id)
+            if execution_paused:
+                # 恢复暂停的执行
+                return self.executor.resume_task(task_id)
+
+            # 检查任务状态
+            if task['status'] != 'paused':
+                return {
+                    "success": False,
+                    "message": "Task is not paused",
+                    "error": f"Cannot resume a task with status: '{task['status']}'",
+                    "current_status": task['status']
+                }
+
+            previous_status = task['status']
+
+            # 恢复任务为调度状态
+            task['status'] = 'scheduled'
+
+            # 重新计算下一次执行时间
+            if task.get('cron_expression'):
+                from croniter import croniter
+                from datetime import datetime
+                now = datetime.now()
+                cron = croniter(task['cron_expression'], now)
+                next_run = cron.get_next(datetime)
+                task['next_run_time'] = next_run.strftime('%Y-%m-%d %H:%M:%S')
+
+            return {
+                "success": True,
+                "message": "Task resumed successfully",
+                "task": {
+                    "task_id": task_id,
+                    "task_name": task.get('task_name'),
+                    "status": 'scheduled',
+                    "previous_status": previous_status,
+                    "next_run_time": task.get('next_run_time')
+                }
+            }
+
+    def disable_task(self, task_id):
+        """禁用任务，将任务状态设置为disabled
+        
+        参数:
+            task_id: 任务ID
+            
+        返回:
+            包含操作结果的字典
+        """
+        with self.lock:
+            # 查找任务
+            task = self._get_task_by_id(task_id)
+            if not task:
+                return {"success": False, "message": f"Task with ID {task_id} not found"}
+
+            # 检查任务状态
+            if task['status'] not in ['scheduled', 'paused']:
+                return {
+                    "success": False,
+                    "message": "Task cannot be disabled",
+                    "error": f"Cannot disable a task with status: '{task['status']}'",
+                    "current_status": task['status']
+                }
+
+            previous_status = task['status']
+
+            # 禁用任务
+            task['status'] = 'disabled'
+
+            return {
+                "success": True,
+                "message": "Task disabled successfully",
+                "task": {
+                    "task_id": task_id,
+                    "task_name": task.get('task_name'),
+                    "status": 'disabled',
+                    "previous_status": previous_status
+                }
+            }
+
     def shutdown(self):
         """停止调度器"""
         self.running = False

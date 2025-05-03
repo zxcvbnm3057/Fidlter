@@ -9,9 +9,10 @@ import ProtectedRoute from './layouts/ProtectedRoute';
 // 导入页面组件
 import Dashboard from './pages/Dashboard';
 import TaskHistory from './pages/TaskHistory';
+import TaskDetail from './pages/TaskDetail';
 import Login from './pages/Login';
-import CondaManager from './components/CondaManager';
-import TaskScheduler from './components/TaskScheduler';
+import CondaManager from './pages/CondaManager';
+import TaskScheduler from './pages/TaskScheduler';
 
 // 导入路由常量
 import { ROUTES } from './constants';
@@ -54,6 +55,14 @@ const App = () => {
                     element={
                         <ProtectedRoute>
                             <TaskScheduler />
+                        </ProtectedRoute>
+                    }
+                />
+                <Route
+                    path="/task-detail/:taskId"
+                    element={
+                        <ProtectedRoute>
+                            <TaskDetail />
                         </ProtectedRoute>
                     }
                 />

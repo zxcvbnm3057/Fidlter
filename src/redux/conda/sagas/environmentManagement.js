@@ -18,7 +18,11 @@ import {
     fetchEnvStatsRequest,
     fetchEnvDetailsRequest,
     setEnvironmentsLoading,
-    addEnvironment
+    addEnvironment,
+    fetchPythonVersionsSuccess,
+    fetchPythonVersionsFailure,
+    fetchEnvExtendedInfoSuccess,
+    fetchEnvExtendedInfoFailure
 } from '../reducer';
 
 // 获取环境列表 - 支持流式请求
@@ -43,12 +47,16 @@ export function* fetchEnvironmentsSaga() {
 
             // 用于解析不完整的JSON行
             let buffer = '';
+            let receivedData = false;
 
             // 循环读取响应流
             while (true) {
                 const { done, value } = yield call([reader, reader.read]);
 
                 if (done) break;
+
+                // 接收到了数据
+                receivedData = true;
 
                 // 将接收到的数据添加到缓冲区
                 buffer += new TextDecoder().decode(value);
@@ -78,6 +86,11 @@ export function* fetchEnvironmentsSaga() {
                 } catch (e) {
                     console.error('Error parsing final JSON line:', e);
                 }
+            }
+
+            // 如果没有接收到任何数据，意味着没有环境
+            if (!receivedData) {
+                console.log('No environments available');
             }
 
             // 标记加载完成
@@ -120,16 +133,46 @@ export function* fetchEnvDetailsSaga(action) {
 // 创建新环境
 export function* createEnvironmentSaga(action) {
     try {
-        const data = yield call(condaService.createEnvironment, { name: action.payload.name });
+        const { name, pythonVersion, packages } = action.payload;
+        const data = yield call(condaService.createEnvironment, {
+            name,
+            python_version: pythonVersion,
+            packages
+        });
+
         yield put(createEnvironmentSuccess({
             success: data.success,
             env: data.environment || null
         }));
+
         // 创建成功后重新获取环境列表和统计信息
         yield put(fetchEnvironmentsRequest());
         yield put(fetchEnvStatsRequest());
+
     } catch (error) {
-        yield put(createEnvironmentFailure(error.message || '创建环境失败'));
+        // 处理不同类型的错误
+        if (error.response) {
+            const errorData = error.response.data;
+
+            if (error.response.status === 400) {
+                if (errorData.not_found_packages) {
+                    // 处理包未找到或Python版本不可用的错误
+                    const errorMsg = errorData.not_found_packages.includes(`python=${action.payload.pythonVersion}`)
+                        ? `Python版本 ${action.payload.pythonVersion} 不可用，请选择其他版本`
+                        : `以下包不可用: ${errorData.not_found_packages.join(', ')}，请检查包名和版本`;
+
+                    yield put(createEnvironmentFailure(errorMsg));
+                } else if (errorData.message === "Environment with this name already exists") {
+                    yield put(createEnvironmentFailure('环境名称已存在，请使用其他名称'));
+                } else {
+                    yield put(createEnvironmentFailure(errorData.message || '创建环境失败'));
+                }
+            } else {
+                yield put(createEnvironmentFailure(errorData.message || '创建环境失败'));
+            }
+        } else {
+            yield put(createEnvironmentFailure(error.message || '创建环境失败'));
+        }
     }
 }
 
@@ -176,5 +219,32 @@ export function* renameEnvironmentSaga(action) {
         } else {
             yield put(renameEnvironmentFailure(error.message || '重命名环境失败'));
         }
+    }
+}
+
+// 获取Python版本列表
+export function* fetchPythonVersionsSaga() {
+    try {
+        const data = yield call(condaService.getPythonVersions);
+        yield put(fetchPythonVersionsSuccess(data));
+    } catch (error) {
+        yield put(fetchPythonVersionsFailure(error.message || '获取Python版本列表失败'));
+    }
+}
+
+// 获取环境扩展信息
+export function* fetchEnvExtendedInfoSaga(action) {
+    try {
+        const envName = action.payload;
+        const data = yield call(condaService.getEnvironmentExtendedInfo, envName);
+        yield put(fetchEnvExtendedInfoSuccess({
+            envName,
+            data
+        }));
+    } catch (error) {
+        yield put(fetchEnvExtendedInfoFailure({
+            envName: action.payload,
+            error: error.message || '获取环境扩展信息失败'
+        }));
     }
 }

@@ -12,6 +12,8 @@ import {
     showCreateModal,
     hideCreateModal,
     setNewEnvName,
+    setPythonVersion,
+    setInitialPackages,
     showDetailsModal,
     hideDetailsModal,
     showEditModal,
@@ -22,19 +24,20 @@ import {
     setNewPackages,
     showRemovePackagesModal,
     hideRemovePackagesModal,
-    setSelectedPackages
+    setSelectedPackages,
+    fetchPythonVersionsRequest
 } from '../redux/conda/reducer';
 import { CAlert, CSpinner } from '@coreui/react';
 
 // 导入拆分后的子组件
-import EnvStatistics from './CondaManager/EnvStatistics';
-import EnvList from './CondaManager/EnvList';
-import CreateEnvModal from './CondaManager/CreateEnvModal';
-import EnvDetailsModal from './CondaManager/EnvDetailsModal';
-import EditEnvModal from './CondaManager/EditEnvModal';
-import { InstallPackagesModal, RemovePackagesModal } from './CondaManager/PackageModals';
+import EnvStatistics from '../components/CondaManager/EnvStatistics';
+import EnvList from '../components/CondaManager/EnvList';
+import CreateEnvModal from '../components/CondaManager/CreateEnvModal';
+import EnvDetailsModal from '../components/CondaManager/EnvDetailsModal';
+import EditEnvModal from '../components/CondaManager/EditEnvModal';
+import { InstallPackagesModal, RemovePackagesModal } from '../components/CondaManager/PackageModals';
 
-const CondaManager = () => {
+const CondaManagerPage = () => {
     const dispatch = useDispatch();
     const {
         environments,
@@ -44,6 +47,11 @@ const CondaManager = () => {
         error,
         createModalVisible,
         newEnvName,
+        pythonVersion,
+        initialPackages,
+        pythonVersionOptions,
+        pythonVersionsLoading,
+        pythonVersionSource,
         selectedEnv,
         detailsModalVisible,
         editModalVisible,
@@ -64,7 +72,14 @@ const CondaManager = () => {
         if (!newEnvName.trim()) return;
 
         // 分发创建环境请求action
-        dispatch(createEnvironmentRequest({ name: newEnvName }));
+        dispatch(createEnvironmentRequest({
+            name: newEnvName,
+            pythonVersion: pythonVersion,
+            packages: initialPackages
+                .split(/\n+/)  // 只按换行符分隔，不再支持逗号
+                .map(pkg => pkg.trim())
+                .filter(pkg => pkg)
+        }));
         dispatch(hideCreateModal());
     };
 
@@ -86,9 +101,9 @@ const CondaManager = () => {
     const handleInstallPackages = () => {
         if (!newPackages.trim() || !selectedEnv) return;
 
-        // 将输入的包名按行或逗号分割转换为数组
+        // 将输入的包名仅按行分割转换为数组，不再支持逗号分隔
         const packagesArray = newPackages
-            .split(/[\n,]+/)
+            .split(/\n+/)
             .map(pkg => pkg.trim())
             .filter(pkg => pkg);
 
@@ -134,7 +149,7 @@ const CondaManager = () => {
             {error && <CAlert color="danger">{error}</CAlert>}
 
             {/* 环境统计组件 */}
-            <EnvStatistics environments={environments} envStats={envStats} />
+            <EnvStatistics environments={environments} envStats={envStats} error={error} />
 
             {/* 环境列表组件 */}
             <EnvList
@@ -153,7 +168,15 @@ const CondaManager = () => {
                 onClose={() => dispatch(hideCreateModal())}
                 envName={newEnvName}
                 onEnvNameChange={(value) => dispatch(setNewEnvName(value))}
+                pythonVersion={pythonVersion}
+                onPythonVersionChange={(value) => dispatch(setPythonVersion(value))}
+                initialPackages={initialPackages}
+                onInitialPackagesChange={(value) => dispatch(setInitialPackages(value))}
                 onCreate={handleCreateEnvironment}
+                pythonVersionOptions={pythonVersionOptions}
+                pythonVersionsLoading={pythonVersionsLoading}
+                pythonVersionSource={pythonVersionSource}
+                onFetchPythonVersions={() => dispatch(fetchPythonVersionsRequest())}
             />
 
             {/* 环境详情模态框 */}
@@ -200,4 +223,4 @@ const CondaManager = () => {
     );
 };
 
-export default CondaManager;
+export default CondaManagerPage;

@@ -1,51 +1,53 @@
 import React from 'react';
-import {
-    CCard,
-    CCardBody,
-    CRow,
-    CCol,
-} from '@coreui/react';
+import { CRow, CCol } from '@coreui/react';
+import { StatCard } from '../../components/common';
 
-const TaskHistoryStats = ({ taskStats, taskHistory }) => {
+// 任务历史统计卡片组件
+const TaskHistoryStats = ({ taskStats, taskHistory, onFilter, currentFilter = 'all' }) => {
+    // 计算异常任务数（状态非成功也非失败的任务）
+    const abnormalTasks = taskHistory.filter(t => t.status !== 'success' && t.status !== 'failed').length;
+
     return (
         <CRow className="mb-4">
             <CCol md={3}>
-                <CCard className="mb-4">
-                    <CCardBody className="text-center">
-                        <div className="h1 mt-2 mb-3">{taskStats.totalTasks || taskHistory.length}</div>
-                        <div className="h5 text-muted mb-0">总任务数</div>
-                    </CCardBody>
-                </CCard>
+                <StatCard
+                    value={taskStats.totalTasks || taskHistory.length}
+                    label="近期总执行数"
+                    color="primary"
+                    onClick={() => onFilter('all')}
+                    isActive={currentFilter === 'all'}
+                    clickable={true}
+                />
             </CCol>
             <CCol md={3}>
-                <CCard className="mb-4">
-                    <CCardBody className="text-center">
-                        <div className="h1 mt-2 mb-3 text-success">
-                            {taskStats.successTasks || taskHistory.filter(t => t.status === 'success').length}
-                        </div>
-                        <div className="h5 text-muted mb-0">成功任务</div>
-                    </CCardBody>
-                </CCard>
+                <StatCard
+                    value={taskStats.successTasks || taskHistory.filter(t => t.status === 'success').length}
+                    label="成功数"
+                    color="success"
+                    onClick={() => onFilter('success')}
+                    isActive={currentFilter === 'success'}
+                    clickable={true}
+                />
             </CCol>
             <CCol md={3}>
-                <CCard className="mb-4">
-                    <CCardBody className="text-center">
-                        <div className="h1 mt-2 mb-3 text-danger">
-                            {taskStats.failedTasks || taskHistory.filter(t => t.status === 'failed').length}
-                        </div>
-                        <div className="h5 text-muted mb-0">失败任务</div>
-                    </CCardBody>
-                </CCard>
+                <StatCard
+                    value={taskStats.failedTasks || taskHistory.filter(t => t.status === 'failed').length}
+                    label="失败数"
+                    color="danger"
+                    onClick={() => onFilter('failed')}
+                    isActive={currentFilter === 'failed'}
+                    clickable={true}
+                />
             </CCol>
             <CCol md={3}>
-                <CCard className="mb-4">
-                    <CCardBody className="text-center">
-                        <div className="h1 mt-2 mb-3 text-info">
-                            {taskStats.avgDuration || '计算中...'}
-                        </div>
-                        <div className="h5 text-muted mb-0">平均耗时</div>
-                    </CCardBody>
-                </CCard>
+                <StatCard
+                    value={taskStats.abnormalTasks || abnormalTasks}
+                    label="异常任务数"
+                    color="warning"
+                    onClick={() => onFilter('abnormal')}
+                    isActive={currentFilter === 'abnormal'}
+                    clickable={true}
+                />
             </CCol>
         </CRow>
     );

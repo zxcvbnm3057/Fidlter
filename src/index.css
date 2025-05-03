@@ -1,0 +1,44 @@
+/* 通用样式 */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* 数据表格样式 */
+.cursor-pointer {
+    cursor: pointer !important;
+}
+
+.hover-highlight:hover {
+    background-color: rgba(0, 123, 255, 0.05) !important;
+    transition: background-color 0.15s ease-in-out;
+}
+
+/* 可点击卡片样式 */
+.stat-card.clickable {
+    cursor: pointer;
+    transition: transform 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+}
+
+.stat-card.clickable:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
+}
+
+.stat-card.active {
+    /* 移除了左侧边框 */
+    box-shadow: 0 .5rem 1rem rgba(0, 0, 0, .15) !important;
+    background-color: rgba(50, 31, 219, 0.03);
+    /* 添加轻微背景色以区分激活状态 */
+}
+
+/* 表格行操作列悬停时显示 */
+.actions-column {
+    opacity: 0.7;
+    transition: opacity 0.15s ease-in-out;
+}
+
+tr:hover .actions-column {
+    opacity: 1;
+}

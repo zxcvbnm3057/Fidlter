@@ -93,3 +93,21 @@ class TaskHistory:
             provider_func: 函数，接受task_id参数，返回任务名称
         """
         self.get_task_name = provider_func
+
+    def get_execution_logs(self, task_id, execution_id):
+        """获取特定执行记录的日志内容
+        
+        此方法专门用于实时日志查询，只返回日志内容而不是整个执行记录
+        
+        参数:
+            task_id: 任务ID
+            execution_id: 执行ID
+            
+        返回:
+            日志内容字符串，如果找不到记录则返回None
+        """
+        with self.lock:
+            record = self.get_execution_record(task_id, execution_id)
+            if record and 'logs' in record:
+                return record.get('logs')
+        return None

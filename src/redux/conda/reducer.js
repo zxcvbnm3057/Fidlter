@@ -7,14 +7,24 @@ const initialState = {
     envDetails: null,
     loading: false,
     error: null,
-    streamLoading: false, // 新增：标记流式加载状态
+    streamLoading: false, // 标记流式加载状态
+    extendedInfoLoading: {}, // 存储每个环境扩展信息的加载状态
+    extendedInfo: {}, // 存储每个环境的扩展信息
+
     // 添加模态框和表单相关的状态
     createModalVisible: false,
     newEnvName: '',
+    pythonVersion: '3.10', // Python版本
+    initialPackages: '', // 初始包列表
+    pythonVersionOptions: [], // 可用的Python版本列表
+    pythonVersionSource: null, // Python版本数据来源
+    pythonVersionsLoading: false, // Python版本是否加载中
+
     selectedEnv: null,
     detailsModalVisible: false,
     editModalVisible: false,
     editEnvName: '',
+
     // 包管理相关状态
     installPackagesModalVisible: false,
     newPackages: '',
@@ -181,10 +191,65 @@ const condaSlice = createSlice({
             state.error = action.payload;
         },
 
+        // 获取Python版本列表请求
+        fetchPythonVersionsRequest: (state) => {
+            state.pythonVersionsLoading = true;
+            state.error = null;
+        },
+        // 获取Python版本列表成功
+        fetchPythonVersionsSuccess: (state, action) => {
+            state.pythonVersionsLoading = false;
+            state.pythonVersionOptions = action.payload.versions;
+            state.pythonVersionSource = action.payload.source;
+
+            // 如果当前设置的版本不在获取的列表中，则重置为列表中的第一个版本
+            if (state.pythonVersionOptions.length > 0 &&
+                !state.pythonVersionOptions.includes(state.pythonVersion)) {
+                state.pythonVersion = state.pythonVersionOptions[0];
+            }
+        },
+        // 获取Python版本列表失败
+        fetchPythonVersionsFailure: (state, action) => {
+            state.pythonVersionsLoading = false;
+            state.error = action.payload;
+        },
+
+        // 获取环境扩展信息请求
+        fetchEnvExtendedInfoRequest: (state, action) => {
+            const envName = action.payload;
+            state.extendedInfoLoading = {
+                ...state.extendedInfoLoading,
+                [envName]: true
+            };
+        },
+        // 获取环境扩展信息成功
+        fetchEnvExtendedInfoSuccess: (state, action) => {
+            const { envName, data } = action.payload;
+            state.extendedInfoLoading = {
+                ...state.extendedInfoLoading,
+                [envName]: false
+            };
+            state.extendedInfo = {
+                ...state.extendedInfo,
+                [envName]: data
+            };
+        },
+        // 获取环境扩展信息失败
+        fetchEnvExtendedInfoFailure: (state, action) => {
+            const { envName, error } = action.payload;
+            state.extendedInfoLoading = {
+                ...state.extendedInfoLoading,
+                [envName]: false
+            };
+            // 可以选择是否存储错误信息
+        },
+
         // 打开创建环境模态框
         showCreateModal: (state) => {
             state.createModalVisible = true;
             state.newEnvName = '';
+            state.pythonVersion = '3.10'; // 重置为默认Python版本
+            state.initialPackages = ''; // 重置初始包列表
         },
         // 关闭创建环境模态框
         hideCreateModal: (state) => {
@@ -193,6 +258,16 @@ const condaSlice = createSlice({
         // 更新新环境名称
         setNewEnvName: (state, action) => {
             state.newEnvName = action.payload;
+        },
+
+        // 更新Python版本
+        setPythonVersion: (state, action) => {
+            state.pythonVersion = action.payload;
+        },
+
+        // 更新初始包列表
+        setInitialPackages: (state, action) => {
+            state.initialPackages = action.payload;
         },
 
         // 打开环境详情模态框
@@ -281,9 +356,17 @@ export const {
     removePackagesRequest,
     removePackagesSuccess,
     removePackagesFailure,
+    fetchPythonVersionsRequest,
+    fetchPythonVersionsSuccess,
+    fetchPythonVersionsFailure,
+    fetchEnvExtendedInfoRequest,
+    fetchEnvExtendedInfoSuccess,
+    fetchEnvExtendedInfoFailure,
     showCreateModal,
     hideCreateModal,
     setNewEnvName,
+    setPythonVersion,
+    setInitialPackages,
     showDetailsModal,
     hideDetailsModal,
     showEditModal,

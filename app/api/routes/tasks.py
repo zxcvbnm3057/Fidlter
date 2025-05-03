@@ -1,5 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app.services import TaskScheduler, CondaManager
+from datetime import datetime
 
 # 创建实例
 task_scheduler = TaskScheduler()
@@ -60,25 +61,34 @@ def schedule_task():
 @task_routes.route('', methods=['GET'])
 def get_tasks():
     """获取所有任务列表"""
-    tasks = task_scheduler.get_tasks()
-    # 格式化任务列表，确保与文档一致
-    formatted_tasks = []
-    for task in tasks:
-        formatted_task = {
-            "task_id": task.get("task_id"),
-            "task_name": task.get("task_name"),
-            "status": task.get("status"),
-            "script_path": task.get("script_path"),
-            "conda_env": task.get("conda_env"),
-            "created_at": task.get("created_at"),
-            "cron_expression": task.get("cron_expression"),
-            "next_run_time_formatted": task.get("next_run_time_formatted"),
-            "last_run_time_formatted": task.get("last_run_time_formatted"),
-            "last_run_duration_formatted": task.get("last_run_duration_formatted"),
-            "completed_at": task.get("completed_at")
-        }
-        formatted_tasks.append(formatted_task)
-    return jsonify(formatted_tasks)
+    # 获取查询参数 - 默认为defined
+    task_type = request.args.get('type', 'defined')
+
+    if task_type == 'history':
+        # 获取任务历史记录
+        task_history = task_scheduler.get_task_history()
+        return jsonify(task_history)
+    else:
+        # 获取已定义的任务列表（默认）
+        tasks = task_scheduler.get_tasks()
+        # 格式化任务列表，确保与文档一致
+        formatted_tasks = []
+        for task in tasks:
+            formatted_task = {
+                "task_id": task.get("task_id"),
+                "task_name": task.get("task_name"),
+                "status": task.get("status"),
+                "script_path": task.get("script_path"),
+                "conda_env": task.get("conda_env"),
+                "created_at": task.get("created_at"),
+                "cron_expression": task.get("cron_expression"),
+                "next_run_time_formatted": task.get("next_run_time_formatted"),
+                "last_run_time_formatted": task.get("last_run_time_formatted"),
+                "last_run_duration_formatted": task.get("last_run_duration_formatted"),
+                "completed_at": task.get("completed_at")
+            }
+            formatted_tasks.append(formatted_task)
+        return jsonify(formatted_tasks)
 
 
 @task_routes.route('/<int:task_id>', methods=['GET'])
@@ -92,7 +102,13 @@ def get_task_status(task_id):
 
 @task_routes.route('/<int:task_id>/stop', methods=['POST'])
 def stop_task(task_id):
-    """停止正在运行的任务"""
+    """停止任务，包括停止正在运行的任务进程和禁用任务调度
+    
+    对于不同状态的任务:
+    - 运行中的任务：停止其执行进程并将状态改为stopped
+    - 已调度或已暂停的任务：将状态改为stopped，不再参与后续调度
+    - 已停止的任务：返回不能停止的错误
+    """
     try:
         result = task_scheduler.stop_task(task_id)
 
@@ -100,14 +116,52 @@ def stop_task(task_id):
             # 判断错误类型
             if "not found" in result.get('message', ''):
                 return jsonify(result), 404
-            elif "not in a running state" in result.get('message', ''):
-                return jsonify(result), 400
             else:
                 return jsonify(result), 400
 
         return jsonify(result), 200
     except Exception as e:
         return jsonify({"success": False, "message": f"Failed to stop task: {str(e)}", "error": str(e)}), 500
+
+
+@task_routes.route('/<int:task_id>/pause', methods=['POST'])
+def pause_task(task_id):
+    """暂停任务调度"""
+    try:
+        result = task_scheduler.pause_task(task_id)
+
+        if not result.get('success', False):
+            # 判断错误类型
+            if "not found" in result.get('message', ''):
+                return jsonify(result), 404
+            elif "cannot be paused" in result.get('message', '').lower():
+                return jsonify(result), 400
+            else:
+                return jsonify(result), 400
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Failed to pause task: {str(e)}", "error": str(e)}), 500
+
+
+@task_routes.route('/<int:task_id>/resume', methods=['POST'])
+def resume_task(task_id):
+    """恢复已暂停的任务"""
+    try:
+        result = task_scheduler.resume_task(task_id)
+
+        if not result.get('success', False):
+            # 判断错误类型
+            if "not found" in result.get('message', ''):
+                return jsonify(result), 404
+            elif "not paused" in result.get('message', '').lower():
+                return jsonify(result), 400
+            else:
+                return jsonify(result), 400
+
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Failed to resume task: {str(e)}", "error": str(e)}), 500
 
 
 @task_routes.route('/stats', methods=['GET'])
@@ -140,3 +194,60 @@ def get_task_history():
         return jsonify({"status": "success", "data": task_history}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@task_routes.route('/<int:task_id>/executions/<execution_id>/logs', methods=['GET'])
+def get_task_execution_logs(task_id, execution_id):
+    """获取任务执行的日志内容
+    
+    支持实时获取最新日志 - 通过 real_time=true 查询参数
+    """
+    # 检查是否需要实时日志
+    real_time = request.args.get('real_time', 'false').lower() == 'true'
+
+    try:
+        # 先获取任务状态以验证任务存在
+        task_status = task_scheduler.get_task_status(task_id)
+        if not task_status.get('success', False):
+            return jsonify({"success": False, "message": f"Task with ID {task_id} not found"}), 404
+
+        # 获取任务执行记录
+        task = task_status.get('task', {})
+        executions = task_status.get('execution_history', [])
+
+        # 查找特定执行记录
+        execution = next((e for e in executions if e.get('execution_id') == execution_id), None)
+        if not execution:
+            return jsonify({
+                "success": False,
+                "message": f"Execution with ID {execution_id} not found for task {task_id}"
+            }), 404
+
+        # 获取执行日志
+        logs = execution.get('logs', '')
+
+        # 处理实时日志请求 - 只获取日志内容，不包含在执行记录中的其他大量数据
+        if real_time and task.get('status') == 'running':
+            # 对于正在运行的任务，从历史记录管理器中直接获取最新日志
+            # 这样可以避免在每次轮询时传输完整的执行历史记录
+            latest_logs = task_scheduler.history.get_execution_logs(task_id, execution_id)
+            if latest_logs:
+                logs = latest_logs
+
+        # 检查任务是否已完成
+        is_complete = execution.get('status') in ['completed', 'failed', 'stopped']
+        # 如果是实时模式，且任务仍在运行，强制设置为未完成
+        if real_time and task.get('status') == 'running':
+            is_complete = False
+
+        # 返回日志信息
+        return jsonify({
+            "success": True,
+            "task_id": task_id,
+            "execution_id": execution_id,
+            "logs": logs,
+            "is_complete": is_complete,
+            "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500

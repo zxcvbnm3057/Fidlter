@@ -1,29 +1,50 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { CNav, CNavItem, CNavLink } from '@coreui/react';
+import { NavLink } from 'react-router-dom';
+import { CNav, CNavItem } from '@coreui/react';
+import { ROUTES } from '../constants';
 
 const Navigation = () => {
     return (
         <CNav variant="pills" className="mb-4">
             <CNavItem>
-                <CNavLink href="/" component={Link}>
+                <NavLink
+                    to={ROUTES.DASHBOARD}
+                    className={({ isActive }) =>
+                        `nav-link ${isActive ? 'active' : ''}`
+                    }
+                >
                     仪表盘
-                </CNavLink>
+                </NavLink>
             </CNavItem>
             <CNavItem>
-                <CNavLink href="/task-scheduler" component={Link}>
+                <NavLink
+                    to={ROUTES.TASK_SCHEDULER}
+                    className={({ isActive }) =>
+                        `nav-link ${isActive ? 'active' : ''}`
+                    }
+                >
                     任务调度
-                </CNavLink>
+                </NavLink>
             </CNavItem>
             <CNavItem>
-                <CNavLink href="/task-history" component={Link}>
+                <NavLink
+                    to={ROUTES.TASK_HISTORY}
+                    className={({ isActive }) =>
+                        `nav-link ${isActive ? 'active' : ''}`
+                    }
+                >
                     历史记录
-                </CNavLink>
+                </NavLink>
             </CNavItem>
             <CNavItem>
-                <CNavLink href="/conda-manager" component={Link}>
+                <NavLink
+                    to={ROUTES.CONDA_MANAGER}
+                    className={({ isActive }) =>
+                        `nav-link ${isActive ? 'active' : ''}`
+                    }
+                >
                     Conda环境管理
-                </CNavLink>
+                </NavLink>
             </CNavItem>
         </CNav>
     );

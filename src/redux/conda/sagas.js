@@ -7,7 +7,9 @@ import {
     deleteEnvironmentRequest,
     renameEnvironmentRequest,
     installPackagesRequest,
-    removePackagesRequest
+    removePackagesRequest,
+    fetchPythonVersionsRequest,
+    fetchEnvExtendedInfoRequest
 } from './reducer';
 
 // 导入拆分后的saga文件
@@ -17,7 +19,9 @@ import {
     fetchEnvDetailsSaga,
     createEnvironmentSaga,
     deleteEnvironmentSaga,
-    renameEnvironmentSaga
+    renameEnvironmentSaga,
+    fetchPythonVersionsSaga,
+    fetchEnvExtendedInfoSaga
 } from './sagas/environmentManagement';
 
 import {
@@ -35,6 +39,8 @@ export default function* condaSagas() {
         takeLatest(deleteEnvironmentRequest.type, deleteEnvironmentSaga),
         takeLatest(installPackagesRequest.type, installPackagesSaga),
         takeLatest(renameEnvironmentRequest.type, renameEnvironmentSaga),
-        takeLatest(removePackagesRequest.type, removePackagesSaga)
+        takeLatest(removePackagesRequest.type, removePackagesSaga),
+        takeLatest(fetchPythonVersionsRequest.type, fetchPythonVersionsSaga),
+        takeLatest(fetchEnvExtendedInfoRequest.type, fetchEnvExtendedInfoSaga)
     ]);
 }

@@ -28,6 +28,7 @@ export const ROUTES = {
     DASHBOARD: '/dashboard',
     TASK_SCHEDULER: '/task-scheduler',
     TASK_HISTORY: '/task-history',
+    TASK_DETAIL: '/task-detail/:taskId',
     CONDA_MANAGER: '/conda-manager',
     GIT_SYNC: '/git-sync'
 };

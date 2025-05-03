@@ -39,6 +39,12 @@ export const condaService = {
         return response.data;
     },
 
+    // 获取环境的扩展信息（包括磁盘使用量和包数量）
+    getEnvironmentExtendedInfo: async (envName) => {
+        const response = await axios.get(`/api/conda/environment/${envName}/extended-info`);
+        return response.data;
+    },
+
     // 创建新环境
     createEnvironment: async (envData) => {
         const response = await axios.post('/api/conda/environment', envData);
@@ -67,5 +73,21 @@ export const condaService = {
     removePackages: async (envName, packages) => {
         const response = await axios.delete(`/api/conda/environment/${envName}/packages`, { data: { packages } });
         return response.data;
-    }
+    },
+
+    // 获取可用的Python版本列表
+    getPythonVersions: async () => {
+        try {
+            const response = await axios.get('/api/conda/python-versions');
+            return response.data;
+        } catch (error) {
+            console.error('Error fetching Python versions:', error);
+            // 请求失败时返回默认版本列表
+            return {
+                versions: ["3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12"],
+                source: "client-fallback",
+                message: "无法从服务器获取Python版本列表，使用客户端预定义版本"
+            };
+        }
+    },
 };

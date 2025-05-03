@@ -25,9 +25,18 @@ class CondaManager:
         """更新任务中的环境引用"""
         return self.env_manager.update_tasks_environment_reference(old_name, new_name)
 
-    def create_environment(self, env_name, packages=None):
-        """创建新的Conda环境"""
-        return self.env_manager.create_environment(env_name, packages)
+    def create_environment(self, env_name, python_version=None, packages=None):
+        """创建新的Conda环境
+        
+        Args:
+            env_name (str): 环境名称
+            python_version (str, optional): Python版本，如"3.8"、"3.10"等
+            packages (list, optional): 要安装的包列表，格式如["numpy==1.22.3", "pandas>=1.3.0"]
+            
+        Returns:
+            dict: 包含操作结果的字典
+        """
+        return self.env_manager.create_environment(env_name, python_version, packages)
 
     def delete_environment(self, env_name):
         """删除Conda环境"""
@@ -56,3 +65,33 @@ class CondaManager:
     def get_environment_details(self, env_name):
         """获取特定环境的详细信息"""
         return self.stats_manager.get_environment_details(env_name)
+
+    def get_formatted_environments(self, stream=False):
+        """获取格式化的环境列表，支持流式响应
+        
+        Args:
+            stream (bool): 是否为流式响应
+            
+        Returns:
+            dict: 包含success和output字段的结果字典
+        """
+        return self.stats_manager.get_formatted_environments(stream)
+
+    def get_available_python_versions(self):
+        """获取可用的Python版本列表
+        
+        Returns:
+            dict: 包含success和output字段的结果字典
+        """
+        return self.stats_manager.get_available_python_versions()
+
+    def get_environment_extended_info(self, env_name):
+        """获取环境的扩展信息（包括磁盘使用量和包数量）
+        
+        Args:
+            env_name (str): 环境名称
+            
+        Returns:
+            dict: 包含success和output字段的结果字典
+        """
+        return self.stats_manager.get_environment_extended_info(env_name)

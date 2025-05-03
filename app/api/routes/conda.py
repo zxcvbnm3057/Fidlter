@@ -17,100 +17,29 @@ def list_conda_environments():
     # 检查是否请求流式响应
     stream = request.args.get('stream', 'false').lower() == 'true'
 
-    environments_result = conda_manager.list_environments()
+    # 使用新的服务层方法获取格式化环境列表
+    result = conda_manager.get_formatted_environments(stream)
 
     # 判断是否成功获取环境列表
-    if not environments_result.get("success", False):
-        return jsonify([]), 500  # 返回空数组和500状态码
+    if not result.get("success", False):
+        return jsonify({"message": "Failed to list environments", "error": result.get("error", "")}), 500
 
-    # 解析conda环境列表，格式化为符合文档要求的格式
-    conda_envs = environments_result.get("output", {})
+    # 获取处理结果
+    output = result.get("output", [])
 
+    # 处理流式响应
     if stream:
-        # 流式响应
+
         def generate():
-            if "envs" in conda_envs:
-                for env_path in conda_envs.get("envs", []):
-                    env_name = os.path.basename(env_path)
-
-                    # 获取环境详情以获取更准确的信息
-                    env_details = conda_manager.get_environment_details(env_name)
-
-                    env_data = {}
-                    if env_details.get("success", False):
-                        details = env_details.get("output", {})
-
-                        # 计算磁盘使用量
-                        disk_usage = details.get("usage_stats", {}).get("disk_usage", None)
-                        is_size_accurate = disk_usage is not None and disk_usage > 0
-
-                        # 获取包数量
-                        package_count = len(details.get("packages", []))
-
-                        env_data = {
-                            "name": env_name,
-                            "python_version": details.get("python_version", "未知"),
-                            "created_at": details.get("created_at",
-                                                      datetime.now().strftime("%Y-%m-%d")),
-                            "disk_usage": disk_usage,
-                            "package_count": package_count,
-                            "is_size_accurate": is_size_accurate
-                        }
-                    else:
-                        # 如果无法获取详情，添加基本信息
-                        env_data = {
-                            "name": env_name,
-                            "python_version": "未知",
-                            "created_at": datetime.now().strftime("%Y-%m-%d"),
-                            "disk_usage": None,
-                            "package_count": 0,
-                            "is_size_accurate": False
-                        }
-
-                    yield json.dumps(env_data) + '\n'
+            # 对于空环境情况，生成器不会产生任何输出
+            # 前端需要处理连接关闭但没有接收到数据的情况
+            for env_data in output:
+                yield json.dumps(env_data) + '\n'
 
         return Response(generate(), mimetype='application/json')
     else:
-        # 正常响应
-        formatted_envs = []
-        if "envs" in conda_envs:
-            for env_path in conda_envs.get("envs", []):
-                env_name = os.path.basename(env_path)
-
-                # 获取环境详情以获取更准确的信息
-                env_details = conda_manager.get_environment_details(env_name)
-
-                if env_details.get("success", False):
-                    details = env_details.get("output", {})
-
-                    # 计算磁盘使用量
-                    disk_usage = details.get("usage_stats", {}).get("disk_usage", None)
-                    is_size_accurate = disk_usage is not None and disk_usage > 0
-
-                    # 获取包数量
-                    package_count = len(details.get("packages", []))
-
-                    formatted_envs.append({
-                        "name": env_name,
-                        "python_version": details.get("python_version", "未知"),
-                        "created_at": details.get("created_at",
-                                                  datetime.now().strftime("%Y-%m-%d")),
-                        "disk_usage": disk_usage,
-                        "package_count": package_count,
-                        "is_size_accurate": is_size_accurate
-                    })
-                else:
-                    # 如果无法获取详情，添加基本信息
-                    formatted_envs.append({
-                        "name": env_name,
-                        "python_version": "未知",
-                        "created_at": datetime.now().strftime("%Y-%m-%d"),
-                        "disk_usage": None,
-                        "package_count": 0,
-                        "is_size_accurate": False
-                    })
-
-        return jsonify(formatted_envs)
+        # 正常响应直接返回JSON格式的数组
+        return jsonify(output)
 
 
 @conda_routes.route('/environment', methods=['POST'])
@@ -118,10 +47,13 @@ def create_conda_environment():
     """创建新的Conda环境"""
     data = request.json
     name = data.get('name')
+    python_version = data.get('python_version')
+    packages = data.get('packages', [])
+
     if not name:
         return jsonify({"success": False, "message": "Environment name is required"}), 400
 
-    result = conda_manager.create_environment(name)
+    result = conda_manager.create_environment(name, python_version, packages)
     if result.get('success'):
         # 格式化为符合文档要求的响应
         return jsonify({
@@ -129,6 +61,7 @@ def create_conda_environment():
             "message": "Environment created successfully",
             "environment": {
                 "name": name,
+                "python_version": python_version,
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
         }), 201
@@ -138,6 +71,14 @@ def create_conda_environment():
                 "success": False,
                 "message": "Environment with this name already exists",
                 "error": result.get('error', '')
+            }), 400
+        elif "not_found_packages" in result:
+            # 处理包未找到的情况
+            return jsonify({
+                "success": False,
+                "message": result.get('message', "Package validation failed"),
+                "error": result.get('error', ''),
+                "not_found_packages": result.get('not_found_packages', [])
             }), 400
         return jsonify(result), 400
 
@@ -308,3 +249,43 @@ def get_conda_environment_details(env_name):
             }), 500
     except Exception as e:
         return jsonify({"message": "Failed to get environment details", "error": str(e)}), 500
+
+
+@conda_routes.route('/environment/<env_name>/extended-info', methods=['GET'])
+def get_conda_environment_extended_info(env_name):
+    """获取环境的扩展信息（包括磁盘使用量和包数量）"""
+    try:
+        result = conda_manager.get_environment_extended_info(env_name)
+        if result.get("success", False):
+            return jsonify(result.get("output", {}))
+        else:
+            # 如果环境不存在，返回404状态码
+            if "not found" in result.get("message", "").lower():
+                return jsonify({
+                    "message": result.get("message", "Environment not found"),
+                    "error": result.get("error", f"Environment with name '{env_name}' does not exist")
+                }), 404
+            # 其他错误返回500状态码
+            return jsonify({
+                "message": result.get("message", "Failed to get environment extended info"),
+                "error": result.get("error", "Unknown error")
+            }), 500
+    except Exception as e:
+        return jsonify({"message": "Failed to get environment extended info", "error": str(e)}), 500
+
+
+@conda_routes.route('/python-versions', methods=['GET'])
+def get_python_versions():
+    """获取可用的Python版本列表"""
+    try:
+        result = conda_manager.get_available_python_versions()
+        if result.get("success", False):
+            # 直接返回结果的output部分
+            return jsonify(result.get("output", {}))
+        else:
+            return jsonify({
+                "message": "Failed to get Python versions",
+                "error": result.get("error", "Unknown error")
+            }), 500
+    except Exception as e:
+        return jsonify({"message": "Failed to get Python versions", "error": str(e)}), 500

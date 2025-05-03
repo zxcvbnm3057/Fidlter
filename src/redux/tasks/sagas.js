@@ -1,31 +1,45 @@
-import { takeLatest, all } from 'redux-saga/effects';
+import { all, takeLatest } from 'redux-saga/effects';
 import {
     fetchTasksRequest,
+    createTaskRequest,
+    stopTaskRequest,
+    pauseTaskRequest,
+    resumeTaskRequest,
     fetchTaskHistoryRequest,
     fetchTaskStatsRequest,
-    createTaskRequest,
-    stopTaskRequest
+    fetchTaskDetailsRequest,
+    fetchTaskLogsRequest,
+    deleteTaskRequest,
+    updateTaskRequest
 } from './reducer';
-
-// 导入拆分后的saga文件
+import {
+    createTaskSaga,
+    stopTaskSaga,
+    pauseTaskSaga,
+    resumeTaskSaga,
+    deleteTaskSaga,
+    updateTaskSaga
+} from './sagas/taskOperations';
 import {
     fetchTasksSaga,
     fetchTaskHistorySaga,
-    fetchTaskStatsSaga
+    fetchTaskStatsSaga,
+    fetchTaskDetailsSaga,
+    fetchTaskLogsSaga
 } from './sagas/taskQueries';
 
-import {
-    createTaskSaga,
-    stopTaskSaga
-} from './sagas/taskOperations';
-
-// 任务管理模块的根saga
-export default function* tasksSagas() {
+export default function* tasksSaga() {
     yield all([
         takeLatest(fetchTasksRequest.type, fetchTasksSaga),
-        takeLatest(fetchTaskHistoryRequest.type, fetchTaskHistorySaga),
-        takeLatest(fetchTaskStatsRequest.type, fetchTaskStatsSaga),
         takeLatest(createTaskRequest.type, createTaskSaga),
         takeLatest(stopTaskRequest.type, stopTaskSaga),
+        takeLatest(pauseTaskRequest.type, pauseTaskSaga),
+        takeLatest(resumeTaskRequest.type, resumeTaskSaga),
+        takeLatest(fetchTaskHistoryRequest.type, fetchTaskHistorySaga),
+        takeLatest(fetchTaskStatsRequest.type, fetchTaskStatsSaga),
+        takeLatest(fetchTaskDetailsRequest.type, fetchTaskDetailsSaga),
+        takeLatest(fetchTaskLogsRequest.type, fetchTaskLogsSaga),
+        takeLatest(deleteTaskRequest.type, deleteTaskSaga),
+        takeLatest(updateTaskRequest.type, updateTaskSaga)
     ]);
 }

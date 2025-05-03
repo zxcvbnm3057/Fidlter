@@ -7,10 +7,11 @@ import {
     CRow,
     CCol,
     CBadge,
-    CTooltip
+    CTooltip,
+    CButton
 } from '@coreui/react';
 
-const EnvStatistics = ({ environments, envStats }) => {
+const EnvStatistics = ({ environments, envStats, error }) => {
     // 在前端计算总磁盘使用量
     const totalDiskUsage = useMemo(() => {
         if (!environments || environments.length === 0) return 0;
@@ -77,6 +78,9 @@ const EnvStatistics = ({ environments, envStats }) => {
 
     // 检查数据是否存在不完整情况
     const isDataIncomplete = (dataObj) => {
+        // 如果没有环境，不应该显示数据不完整
+        if (!environments || environments.length === 0) return false;
+
         if (!dataObj) return true;
         return dataObj.value === 0 || !dataObj.isComplete;
     }
@@ -101,118 +105,163 @@ const EnvStatistics = ({ environments, envStats }) => {
         return environments.some(env => env.is_size_accurate === false);
     }, [environments]);
 
+    // 渲染空环境状态界面
+    const renderEmptyState = (type) => {
+        const titles = {
+            'pie': '环境使用情况',
+            'bar': '环境包数量统计'
+        };
+
+        return (
+            <div className="text-center py-4 d-flex flex-column align-items-center justify-content-center" style={{ height: '250px' }}>
+                <span role="img" aria-label="chart" style={{ fontSize: '3rem', marginBottom: '15px' }}>📊</span>
+                <h5 className="text-muted mb-3">暂无数据</h5>
+                <p className="text-muted mb-4" style={{ maxWidth: '80%' }}>
+                    {type === 'pie'
+                        ? '您尚未创建任何 Conda 环境。创建环境后，可以在此查看环境使用统计。'
+                        : '您尚未创建任何 Conda 环境。创建环境后，可以在此查看包数量统计。'}
+                </p>
+            </div>
+        );
+    };
+
+    // 根据状态返回适当的图表或提示信息
+    const renderChartOrMessage = (chartData, chartType, isEmpty) => {
+        if (error) {
+            return (
+                <div className="text-center py-5 text-muted">
+                    <span className="h4"><i className="fa fa-exclamation-triangle me-2" style={{ color: '#e55353' }}></i></span>
+                    <p>无法获取数据</p>
+                </div>
+            );
+        }
+
+        if (!chartData) {
+            return isEmpty ? renderEmptyState(chartType) : (
+                <div className="text-center py-5 text-muted">
+                    <div className="spinner-border text-info mb-3" role="status">
+                        <span className="visually-hidden">加载中...</span>
+                    </div>
+                    <p>数据加载中...</p>
+                </div>
+            );
+        }
+
+        const chartOptions = {
+            pie: {
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                    }
+                },
+                maintainAspectRatio: false,
+            },
+            bar: {
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: '包数量'
+                        }
+                    }
+                },
+                maintainAspectRatio: false,
+            }
+        };
+
+        return (
+            <CChart
+                type={chartType}
+                data={chartData}
+                options={chartOptions[chartType]}
+                style={{ height: '250px' }}
+            />
+        );
+    };
+
+    // 判断环境列表是否为空
+    const isEnvironmentsEmpty = environments && environments.length === 0;
+
+    // 渲染卡片统计信息
+    const renderStatCard = (title, value, color, icon) => (
+        <CCard className="mb-4 border-top-3" style={{ borderTop: `3px solid ${color}` }}>
+            <CCardBody className="text-center">
+                <div className="h1 mt-2 mb-3" style={{ color }}>
+                    {value}
+                </div>
+                <div className="h5 text-muted mb-0">{title}</div>
+            </CCardBody>
+        </CCard>
+    );
+
     return (
         <>
             <CRow className="mb-4">
                 <CCol sm={6} lg={3}>
-                    <CCard className="mb-4 text-center">
-                        <CCardBody>
-                            <CCardTitle component="h5">总环境数</CCardTitle>
-                            <div className="h1 mt-3 mb-2">{envStats?.total_environments || environments.length}</div>
-                        </CCardBody>
-                    </CCard>
+                    {renderStatCard(
+                        '总环境数',
+                        envStats?.total_environments || environments?.length || 0,
+                        '#321fdb',
+                        'fa-list'
+                    )}
                 </CCol>
                 <CCol sm={6} lg={3}>
-                    <CCard className="mb-4 text-center">
-                        <CCardBody>
-                            <CCardTitle component="h5">活跃环境</CCardTitle>
-                            <div className="h1 mt-3 mb-2 text-success">
-                                {envStats?.active_environments || 0}
+                    {renderStatCard(
+                        '活跃环境',
+                        envStats?.active_environments || 0,
+                        '#2eb85c',
+                        'fa-play-circle'
+                    )}
+                </CCol>
+                <CCol sm={6} lg={3}>
+                    <CCard className="mb-4 border-top-3" style={{ borderTop: '3px solid #3399ff' }}>
+                        <CCardBody className="text-center">
+                            <div className="h1 mt-2 mb-3" style={{ color: '#3399ff' }}>
+                                {(!environments || environments.length === 0) ? '0 MB' : (totalDiskUsage.value > 0 ? `${totalDiskUsage.value} GB` : '未知')}
+                            </div>
+                            <div className="h5 text-muted mb-0">
+                                磁盘使用 {renderDiskUsageWarning()}
+                                {hasInaccurateSizeData && (
+                                    <div className="mt-2">
+                                        <CBadge color="warning">
+                                            某些环境占用大小数据可能不准确
+                                        </CBadge>
+                                    </div>
+                                )}
                             </div>
                         </CCardBody>
                     </CCard>
                 </CCol>
                 <CCol sm={6} lg={3}>
-                    <CCard className="mb-4 text-center">
-                        <CCardBody>
-                            <CCardTitle component="h5">
-                                磁盘使用
-                                {renderDiskUsageWarning()}
-                            </CCardTitle>
-                            <div className="h1 mt-3 mb-2 text-info">
-                                {totalDiskUsage.value > 0 ? `${totalDiskUsage.value} GB` : '未知'}
-                            </div>
-                            {hasInaccurateSizeData && (
-                                <CBadge color="warning" className="mt-2">
-                                    某些环境占用大小数据可能不准确
-                                </CBadge>
-                            )}
-                        </CCardBody>
-                    </CCard>
-                </CCol>
-                <CCol sm={6} lg={3}>
-                    <CCard className="mb-4 text-center">
-                        <CCardBody>
-                            <CCardTitle component="h5">最近创建</CCardTitle>
-                            <div className="h1 mt-3 mb-2 text-warning">
-                                {envStats?.latest_created?.name || (environments.length > 0 ? environments[environments.length - 1].name : '-')}
-                            </div>
-                        </CCardBody>
-                    </CCard>
+                    {renderStatCard(
+                        '最近创建',
+                        envStats?.latest_created?.name || (environments?.length > 0 ? environments[environments.length - 1].name : '-'),
+                        '#f9b115',
+                        'fa-clock'
+                    )}
                 </CCol>
             </CRow>
 
             <CRow className="mb-4">
                 <CCol md={5}>
-                    <CCard className="mb-4">
+                    <CCard className="mb-4 h-100">
                         <CCardBody>
                             <CCardTitle component="h5">环境使用情况</CCardTitle>
-                            {prepareEnvUsageChart() ? (
-                                <CChart
-                                    type="pie"
-                                    data={prepareEnvUsageChart()}
-                                    options={{
-                                        plugins: {
-                                            legend: {
-                                                position: 'bottom',
-                                            }
-                                        },
-                                        maintainAspectRatio: false,
-                                    }}
-                                    style={{ height: '250px' }}
-                                />
-                            ) : (
-                                <div className="text-center py-5 text-muted">
-                                    <span className="h4">⚠️</span>
-                                    <p>无法获取环境使用数据</p>
-                                </div>
-                            )}
+                            {renderChartOrMessage(prepareEnvUsageChart(), 'pie', isEnvironmentsEmpty)}
                         </CCardBody>
                     </CCard>
                 </CCol>
                 <CCol md={7}>
-                    <CCard className="mb-4">
+                    <CCard className="mb-4 h-100">
                         <CCardBody>
                             <CCardTitle component="h5">环境包数量统计</CCardTitle>
-                            {preparePackagesChart() ? (
-                                <CChart
-                                    type="bar"
-                                    data={preparePackagesChart()}
-                                    options={{
-                                        plugins: {
-                                            legend: {
-                                                position: 'top',
-                                            }
-                                        },
-                                        scales: {
-                                            y: {
-                                                beginAtZero: true,
-                                                title: {
-                                                    display: true,
-                                                    text: '包数量'
-                                                }
-                                            }
-                                        },
-                                        maintainAspectRatio: false,
-                                    }}
-                                    style={{ height: '250px' }}
-                                />
-                            ) : (
-                                <div className="text-center py-5 text-muted">
-                                    <span className="h4">⚠️</span>
-                                    <p>无法获取包统计数据</p>
-                                </div>
-                            )}
+                            {renderChartOrMessage(preparePackagesChart(), 'bar', isEnvironmentsEmpty)}
                         </CCardBody>
                     </CCard>
                 </CCol>

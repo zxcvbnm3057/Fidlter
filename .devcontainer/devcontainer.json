@@ -25,6 +25,14 @@
 	"runArgs": [
 		"--network=host"
 	],
+	// 设置环境变量以禁用代理
+	"containerEnv": {
+		"HTTP_PROXY": "",
+		"HTTPS_PROXY": "",
+		"http_proxy": "",
+		"https_proxy": "",
+		"NO_PROXY": "*"
+	},
 	// 挂载工作目录
 	"workspaceMount": "source=${localWorkspaceFolder},target=/app,type=bind,consistency=cached",
 	"workspaceFolder": "/app",

@@ -58,6 +58,14 @@ class TaskScheduler:
         """获取任务统计信息"""
         return self.stats.get_task_stats()
 
+    def pause_task(self, task_id):
+        """暂停任务调度"""
+        return self.scheduler.pause_task(task_id)
+
+    def resume_task(self, task_id):
+        """恢复已暂停的任务"""
+        return self.scheduler.resume_task(task_id)
+
     def get_task_history(self):
         """获取最近一个月的任务执行历史记录"""
         return self.history.get_task_history()
@@ -67,5 +75,64 @@ class TaskScheduler:
         self.scheduler.shutdown()
 
     def stop_task(self, task_id):
-        """停止正在运行的任务"""
-        return self.executor.stop_task(task_id)
+        """停止任务，包括停止正在运行的任务进程和禁用任务调度
+        
+        此方法整合了原先的stop_task和disable_task功能:
+        1. 对于正在运行的任务，会先停止其执行进程
+        2. 对于所有状态的任务，会将其状态设为stopped，不再参与后续调度
+        
+        参数:
+            task_id: 任务ID
+            
+        返回:
+            包含操作结果的字典
+        """
+        with self.lock:
+            # 查找任务
+            task = self.scheduler._get_task_by_id(task_id)
+            if not task:
+                return {"success": False, "message": f"Task with ID {task_id} not found"}
+
+            previous_status = task['status']
+
+            # 如果任务已经是stopped状态，返回错误
+            if task['status'] == 'stopped':
+                return {
+                    "success": False,
+                    "message": "Task is already stopped",
+                    "error": "Cannot stop a task that is already stopped",
+                    "current_status": task['status']
+                }
+
+            # 如果任务正在运行，先停止执行
+            if task['status'] == 'running':
+                stop_result = self.executor.stop_task(task_id)
+                if not stop_result.get("success", False):
+                    return stop_result
+
+                # 执行器的stop_task已将状态设为stopped，直接返回结果
+                return stop_result
+
+            # 如果任务状态是已调度或已暂停，则将其状态设为stopped
+            elif task['status'] in ['scheduled', 'paused']:
+                # 禁用任务，不再参与调度
+                task['status'] = 'stopped'
+
+                return {
+                    "success": True,
+                    "message": "Task stopped successfully",
+                    "task": {
+                        "task_id": task_id,
+                        "task_name": task.get('task_name'),
+                        "status": 'stopped',
+                        "previous_status": previous_status
+                    }
+                }
+            else:
+                # 对于其他状态（如completed或failed）
+                return {
+                    "success": False,
+                    "message": "Task cannot be stopped",
+                    "error": f"Cannot stop a task with status: '{task['status']}'",
+                    "current_status": task['status']
+                }

@@ -78,9 +78,6 @@ const Auth = () => {
                                     className="w-100 mt-3"
                                     disabled={loading}
                                 >
-                                    className="w-100 mt-3"
-                                    disabled={loading}
-                                >
                                     {loading ? <CSpinner size="sm" /> : '登录'}
                                 </CButton>
                             </CForm>

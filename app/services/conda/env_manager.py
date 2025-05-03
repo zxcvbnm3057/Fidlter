@@ -56,11 +56,12 @@ class EnvironmentManager:
 
         return updated_count
 
-    def create_environment(self, env_name, packages=None):
+    def create_environment(self, env_name, python_version=None, packages=None):
         """创建新的Conda环境
         
         参数:
             env_name: 环境名称
+            python_version: Python版本，如"3.8"、"3.10"等（可选）
             packages: 要安装的包列表（可选）
             
         返回:
@@ -79,11 +80,45 @@ class EnvironmentManager:
 
         # 创建环境
         command = [self.conda_command, "create", "--name", env_name, "--yes"]
-        if packages:
-            command += packages
+
+        # 如果指定了Python版本，添加到命令中
+        if python_version:
+            command.append(f"python={python_version}")
+
+        # 如果指定了其他包，添加到命令中
+        if packages and isinstance(packages, list):
+            command.extend(packages)
+
         process = Popen(command, stdout=PIPE, stderr=PIPE)
         stdout, stderr = process.communicate()
-        return self._handle_process_output(stdout, stderr)
+
+        # 处理命令执行结果
+        result = self._handle_process_output(stdout, stderr)
+
+        # 如果安装失败，提取更详细的错误信息
+        if not result.get("success", False):
+            error_text = result.get("error", "")
+
+            # 检查常见错误
+            if "PackagesNotFoundError" in error_text:
+                # 提取未找到的包名
+                import re
+                not_found_packages = re.findall(r"- ([^\s]+)", error_text)
+                return {
+                    "success": False,
+                    "error": error_text,
+                    "message": "Failed to create environment: packages not found",
+                    "not_found_packages": not_found_packages
+                }
+            elif python_version and f"PackagesNotFoundError: The following packages are not available from current channels:\n  - python={python_version}" in error_text:
+                return {
+                    "success": False,
+                    "error": error_text,
+                    "message": f"Python version {python_version} not available",
+                    "not_found_packages": [f"python={python_version}"]
+                }
+
+        return result
 
     def delete_environment(self, env_name):
         """删除Conda环境"""

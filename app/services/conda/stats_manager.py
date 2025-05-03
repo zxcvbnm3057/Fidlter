@@ -1,7 +1,8 @@
-from subprocess import Popen, PIPE
+import requests
+import logging
 import json
 import os
-import logging
+from subprocess import Popen, PIPE
 from datetime import datetime, timedelta
 
 
@@ -12,6 +13,8 @@ class StatsManager:
         self.conda_command = "conda"
         self.task_scheduler = task_scheduler
         self.logger = logging.getLogger("StatsManager")
+        # 预定义Python版本列表（当无法获取时使用）
+        self.fallback_python_versions = ["3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12"]
 
     def set_task_scheduler(self, task_scheduler):
         """设置任务调度器实例，用于获取环境统计信息"""
@@ -353,3 +356,203 @@ class StatsManager:
             disk_usage = 0
 
         return disk_usage
+
+    def get_formatted_environments(self, stream=False):
+        """获取格式化的环境列表，支持流式响应
+        
+        Args:
+            stream (bool): 是否为流式响应
+            
+        Returns:
+            dict: 包含success和output字段的结果字典
+        """
+        # 获取环境列表
+        env_list_result = self.list_environments()
+        if not env_list_result.get("success", False):
+            return {
+                "success": False,
+                "error": env_list_result.get("error", "未知错误"),
+                "message": "Failed to list environments"
+            }
+
+        conda_envs = env_list_result.get("output", {})
+        env_paths = conda_envs.get("envs", [])
+
+        # 根据是否流式响应来处理
+        if stream:
+            # 创建生成器函数
+            def generate_envs():
+                # 对于没有环境的情况，生成器不产生任何内容
+                # 这将导致流式响应不返回任何数据行，前端需要处理这种情况
+                for env_path in env_paths:
+                    env_name = os.path.basename(env_path)
+                    # 获取环境基本信息
+                    env_data = self._get_basic_env_data(env_name)
+                    yield env_data
+
+            return {"success": True, "output": generate_envs()}
+        else:
+            # 常规响应
+            formatted_envs = []
+
+            for env_path in env_paths:
+                env_name = os.path.basename(env_path)
+                # 获取环境基本信息
+                env_data = self._get_basic_env_data(env_name)
+                formatted_envs.append(env_data)
+
+            # 没有环境时返回空数组
+            return {"success": True, "output": formatted_envs}
+
+    def _get_basic_env_data(self, env_name):
+        """获取环境的基本信息（不包含耗时的磁盘空间和包数量计算）
+        
+        Args:
+            env_name (str): 环境名称
+            
+        Returns:
+            dict: 环境基本信息
+        """
+        # 获取环境信息 - 只获取基本信息，不计算磁盘使用量和包数量
+        env_info = self._get_env_info(env_name)
+
+        # 获取Python版本
+        python_version = "未知"
+        try:
+            for path in self.list_environments().get("output", {}).get("envs", []):
+                if os.path.basename(path) == env_name:
+                    _, packages = self._get_env_python_and_packages(path)
+                    for package in packages:
+                        if package.get("name") == "python":
+                            python_version = package.get("version")
+                            break
+                    break
+        except Exception as e:
+            self.logger.error(f"Error getting Python version for environment {env_name}: {str(e)}")
+
+        return {
+            "name": env_name,
+            "python_version": python_version,
+            "created_at": env_info.get("created_at",
+                                       datetime.now().strftime("%Y-%m-%d")),
+            "basic_info_only": True
+        }
+
+    def get_environment_extended_info(self, env_name):
+        """获取环境的扩展信息（包括磁盘使用量和包数量）
+        
+        Args:
+            env_name (str): 环境名称
+            
+        Returns:
+            dict: 包含success和output字段的结果字典
+        """
+        # 检查环境是否存在
+        env_exists = False
+        env_path = None
+
+        env_list_result = self.list_environments()
+        if not env_list_result.get("success", False):
+            return {
+                "success": False,
+                "error": "Failed to list environments",
+                "message": "Unable to verify environment existence"
+            }
+
+        for path in env_list_result.get("output", {}).get("envs", []):
+            if os.path.basename(path) == env_name:
+                env_exists = True
+                env_path = path
+                break
+
+        if not env_exists:
+            return {
+                "success": False,
+                "error": f"Environment '{env_name}' not found",
+                "message": "Environment not found"
+            }
+
+        # 计算磁盘使用量
+        disk_usage = self._calculate_disk_usage(env_name)
+        is_size_accurate = disk_usage is not None
+        disk_usage = disk_usage if disk_usage is not None else 0
+
+        # 计算包数量
+        package_count = 0
+        try:
+            _, packages = self._get_env_python_and_packages(env_path)
+            package_count = len(packages)
+        except Exception as e:
+            self.logger.error(f"Error counting packages for environment {env_name}: {str(e)}")
+
+        return {
+            "success": True,
+            "output": {
+                "name": env_name,
+                "disk_usage": round(disk_usage, 2),
+                "package_count": package_count,
+                "is_size_accurate": is_size_accurate
+            }
+        }
+
+    def get_available_python_versions(self):
+        """从Conda官网获取可用的Python版本列表
+        
+        尝试从Conda包信息API获取可用的Python版本，
+        如果失败则返回预定义的版本列表
+        
+        Returns:
+            dict: 包含success和output字段的结果字典，
+                  output中包含versions列表和source来源信息
+        """
+        try:
+            # 尝试从Anaconda Cloud API获取Python包信息
+            url = "https://api.anaconda.org/package/anaconda/python"
+            response = requests.get(url, timeout=5)  # 5秒超时
+
+            if response.status_code == 200:
+                package_info = response.json()
+
+                # 提取版本信息，通常格式为 x.y.z
+                all_versions = package_info.get('versions', [])
+
+                # 过滤并提取主要版本号 (x.y)
+                major_versions = set()
+                for version in all_versions:
+                    # 分割版本号并提取前两部分
+                    parts = version.split('.')
+                    if len(parts) >= 2:
+                        # 只保留 x.y 格式
+                        major_version = f"{parts[0]}.{parts[1]}"
+                        # 只保留3.x版本
+                        if major_version.startswith('3.'):
+                            major_versions.add(major_version)
+
+                # 转换为列表并排序
+                sorted_versions = sorted(list(major_versions), key=lambda v: [int(x) for x in v.split('.')])
+
+                if sorted_versions:
+                    return {"success": True, "output": {"versions": sorted_versions, "source": "conda"}}
+
+            # 如果API请求失败或解析失败，使用fallback
+            self.logger.warning("Failed to get Python versions from Anaconda API, using fallback list")
+            return {
+                "success": True,
+                "output": {
+                    "versions": self.fallback_python_versions,
+                    "source": "fallback",
+                    "message": "无法从Conda官网获取版本信息，使用预定义版本列表"
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error fetching Python versions: {str(e)}")
+            # 出现异常时返回预定义版本列表
+            return {
+                "success": True,
+                "output": {
+                    "versions": self.fallback_python_versions,
+                    "source": "fallback",
+                    "message": "无法从Conda官网获取版本信息，使用预定义版本列表"
+                }
+            }

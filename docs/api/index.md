@@ -1,0 +1,32 @@
+# Conda Task Manager API 接口文档
+
+本文档描述了Conda Task Manager系统的所有可用API接口。
+
+## 目录
+
+- [认证接口](auth.md)
+  - [用户登录](auth.md#用户登录)
+  - [创建用户](auth.md#创建用户)
+  - [退出登录](auth.md#退出登录)
+  - [获取当前用户信息](auth.md#获取当前用户信息)
+  - [检查会话是否有效](auth.md#检查会话是否有效)
+- [Conda环境管理](conda.md)
+  - [获取环境列表](conda.md#获取环境列表)
+  - [获取环境统计信息](conda.md#获取环境统计信息)
+  - [获取环境详情](conda.md#获取环境详情)
+  - [创建新环境](conda.md#创建新环境)
+  - [修改环境](conda.md#修改环境)
+  - [安装包](conda.md#安装包)
+  - [移除包](conda.md#移除包)
+  - [删除环境](conda.md#删除环境)
+- [任务管理](tasks.md)
+  - [创建任务](tasks.md#创建任务)
+  - [获取所有任务](tasks.md#获取所有任务)
+  - [获取任务状态](tasks.md#获取任务状态)
+  - [停止任务](tasks.md#停止任务)
+  - [获取任务统计信息](tasks.md#获取任务统计信息)
+  - [获取最近一个月的任务历史记录](tasks.md#获取最近一个月的任务历史记录)
+  - [获取任务执行日志](tasks.md#获取任务执行日志)
+- [通用信息](common.md)
+  - [状态码说明](common.md#状态码说明)
+  - [注意事项](common.md#注意事项)

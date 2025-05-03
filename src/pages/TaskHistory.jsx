@@ -15,6 +15,7 @@ const TaskHistory = () => {
     const dispatch = useDispatch();
     const { taskHistory, taskStats, loading, error } = useSelector(state => state.tasks);
     const [filteredHistory, setFilteredHistory] = useState([]);
+    const [filter, setFilter] = useState('all');
 
     useEffect(() => {
         // 分发获取任务历史记录请求action
@@ -24,18 +25,31 @@ const TaskHistory = () => {
     }, [dispatch]);
 
     useEffect(() => {
-        // 当获取到历史数据后，设置筛选后的数据
+        // 当获取到历史数据后，应用当前筛选条件
         if (taskHistory.length > 0) {
-            setFilteredHistory(taskHistory);
-        }
-    }, [taskHistory]);
-
-    const handleFilter = (filter) => {
-        if (filter === 'all') {
-            setFilteredHistory(taskHistory);
+            applyFilter(filter);
         } else {
-            setFilteredHistory(taskHistory.filter(task => task.status === filter));
+            setFilteredHistory([]);
         }
+    }, [taskHistory, filter]);
+
+    // 应用筛选条件
+    const applyFilter = (filterValue) => {
+        if (filterValue === 'all') {
+            setFilteredHistory(taskHistory);
+        } else if (filterValue === 'abnormal') {
+            // 筛选异常任务（非成功、非失败状态）
+            setFilteredHistory(taskHistory.filter(task =>
+                task.status !== 'success' && task.status !== 'failed'
+            ));
+        } else {
+            setFilteredHistory(taskHistory.filter(task => task.status === filterValue));
+        }
+    };
+
+    // 处理筛选变更
+    const handleFilter = (filterValue) => {
+        setFilter(filterValue);
     };
 
     if (loading && taskHistory.length === 0) {
@@ -47,10 +61,15 @@ const TaskHistory = () => {
             <h2>任务执行历史</h2>
             {error && <CAlert color="danger">{error}</CAlert>}
 
-            {/* 使用子组件 */}
-            <TaskHistoryStats taskStats={taskStats} taskHistory={taskHistory} />
+            {/* 传递currentFilter属性到TaskHistoryStats组件 */}
+            <TaskHistoryStats
+                taskStats={taskStats}
+                taskHistory={taskHistory}
+                onFilter={handleFilter}
+                currentFilter={filter}
+            />
             <TaskHistoryCharts taskHistory={taskHistory} />
-            <TaskHistoryList taskHistory={filteredHistory} onFilter={handleFilter} />
+            <TaskHistoryList taskHistory={filteredHistory} onFilter={handleFilter} currentFilter={filter} />
         </div>
     );
 };
