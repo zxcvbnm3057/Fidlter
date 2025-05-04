@@ -10,6 +10,7 @@ const initialState = {
     streamLoading: false, // 标记流式加载状态
     extendedInfoLoading: {}, // 存储每个环境扩展信息的加载状态
     extendedInfo: {}, // 存储每个环境的扩展信息
+    envDetailsLoading: false, // 用于标记环境详情加载状态
 
     // 添加模态框和表单相关的状态
     createModalVisible: false,
@@ -89,17 +90,18 @@ const condaSlice = createSlice({
 
         // 获取环境详情请求
         fetchEnvDetailsRequest: (state) => {
-            state.loading = true;
+            // 使用单独的加载标识而不是全局loading状态
+            state.envDetailsLoading = true;
             state.error = null;
         },
         // 获取环境详情成功
         fetchEnvDetailsSuccess: (state, action) => {
-            state.loading = false;
+            state.envDetailsLoading = false;
             state.envDetails = action.payload;
         },
         // 获取环境详情失败
         fetchEnvDetailsFailure: (state, action) => {
-            state.loading = false;
+            state.envDetailsLoading = false;
             state.error = action.payload;
         },
 

@@ -117,15 +117,30 @@ const Dashboard = () => {
 
     const prepareTaskSuccessRateData = () => {
         // 饼图 - 任务成功率分布
+        const successRate = {
+            success: taskStats.task_success_rate?.success || 0,
+            failed: taskStats.task_success_rate?.failed || 0,
+            cancelled: taskStats.task_success_rate?.cancelled || 0,
+            abnormal: taskStats.task_success_rate?.abnormal || 0
+        };
+
+        // 检查所有数据是否都为0
+        const allZeros = Object.values(successRate).every(value => value === 0);
+
+        // 如果所有数据都为0，返回null表示没有有效数据
+        if (allZeros) {
+            return null;
+        }
+
         return {
             labels: ['成功', '失败', '取消', '异常终止'],
             datasets: [
                 {
                     data: [
-                        taskStats.task_success_rate?.success || 0,
-                        taskStats.task_success_rate?.failed || 0,
-                        taskStats.task_success_rate?.cancelled || 0,
-                        taskStats.task_success_rate?.abnormal || 0
+                        successRate.success,
+                        successRate.failed,
+                        successRate.cancelled,
+                        successRate.abnormal
                     ],
                     backgroundColor: ['#2ECC71', '#E74C3C', '#F39C12', '#95A5A6'],
                     hoverBackgroundColor: ['#27AE60', '#C0392B', '#D35400', '#7F8C8D'],

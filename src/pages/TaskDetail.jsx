@@ -17,7 +17,12 @@ import {
     CModalHeader,
     CModalBody,
     CModalFooter,
-    CModalTitle
+    CModalTitle,
+    CNav,
+    CNavItem,
+    CNavLink,
+    CTabContent,
+    CTabPane
 } from '@coreui/react';
 import CIcon from '@coreui/icons-react';
 import {
@@ -25,7 +30,8 @@ import {
     cilArrowLeft,
     cilMenu,
     cilReload,
-    cilPlaylistAdd
+    cilPlaylistAdd,
+    cilCloudUpload
 } from '@coreui/icons';
 import {
     fetchTaskDetailsRequest,
@@ -35,6 +41,8 @@ import {
     clearTaskLogs
 } from '../redux/tasks/reducer';
 import { CChart } from '@coreui/react-chartjs';
+import GitTaskUpdate from '../components/TaskScheduler/GitTaskUpdate';
+import TaskScriptUpdater from '../components/TaskScheduler/TaskScriptUpdater';
 
 const TaskDetail = () => {
     const { taskId } = useParams();
@@ -45,6 +53,13 @@ const TaskDetail = () => {
     const [logModalVisible, setLogModalVisible] = useState(false);
     const [activeExecutionId, setActiveExecutionId] = useState(null);
     const logContainerRef = useRef(null);
+    const [activeTab, setActiveTab] = useState(1); // 添加标签页状态
+
+    // 脚本更新成功后的回调
+    const handleScriptUpdateSuccess = (result) => {
+        // 刷新任务详情
+        refreshTaskDetails();
+    };
 
     // 获取任务详情
     useEffect(() => {
@@ -220,203 +235,240 @@ const TaskDetail = () => {
 
             {error && <CAlert color="danger">{error}</CAlert>}
 
+            {/* 如果是Git仓库任务，显示Git仓库同步组件 */}
+            {task && task.is_git_task && (
+                <GitTaskUpdate taskId={parseInt(taskId)} />
+            )}
+
             {task && (
                 <>
-                    <CRow className="mb-4">
-                        <CCol md={6}>
-                            <CCard className="mb-4">
-                                <CCardHeader>
-                                    <h5 className="mb-0">基本信息</h5>
-                                </CCardHeader>
-                                <CCardBody>
-                                    <CListGroup flush>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>任务ID:</span>
-                                                <span>{task.task_id}</span>
-                                            </div>
-                                        </CListGroupItem>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>状态:</span>
-                                                <CBadge color={
-                                                    task.status === 'running' ? 'primary' :
-                                                        task.status === 'success' || task.status === 'completed' ? 'success' :
-                                                            task.status === 'failed' ? 'danger' :
-                                                                task.status === 'scheduled' ? 'warning' :
-                                                                    'secondary'
-                                                }>
-                                                    {task.status}
-                                                </CBadge>
-                                            </div>
-                                        </CListGroupItem>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>Conda环境:</span>
-                                                <span>{task.conda_env}</span>
-                                            </div>
-                                        </CListGroupItem>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>创建时间:</span>
-                                                <span>{new Date(task.created_at || Date.now()).toLocaleString()}</span>
-                                            </div>
-                                        </CListGroupItem>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>上次执行时间:</span>
-                                                <span>{task.last_run_time ? new Date(task.last_run_time).toLocaleString() : '-'}</span>
-                                            </div>
-                                        </CListGroupItem>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>执行时长:</span>
-                                                <span>{task.last_run_duration ? `${task.last_run_duration}秒` : '-'}</span>
-                                            </div>
-                                        </CListGroupItem>
-                                    </CListGroup>
-                                </CCardBody>
-                            </CCard>
+                    {/* 添加标签导航 */}
+                    <CNav variant="tabs" className="mb-4">
+                        <CNavItem>
+                            <CNavLink
+                                active={activeTab === 1}
+                                onClick={() => setActiveTab(1)}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                任务详情
+                            </CNavLink>
+                        </CNavItem>
+                        <CNavItem>
+                            <CNavLink
+                                active={activeTab === 2}
+                                onClick={() => setActiveTab(2)}
+                                style={{ cursor: 'pointer' }}
+                            >
+                                更新脚本
+                            </CNavLink>
+                        </CNavItem>
+                    </CNav>
 
-                            <CCard className="mb-4">
-                                <CCardHeader>
-                                    <h5 className="mb-0">脚本信息</h5>
-                                </CCardHeader>
-                                <CCardBody>
-                                    <CListGroup flush>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>脚本路径:</span>
-                                                <span className="text-break">{task.script_path}</span>
-                                            </div>
-                                        </CListGroupItem>
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>任务类型:</span>
-                                                <span>
-                                                    {task.cron_expression ?
-                                                        '定时调度' : '立即执行'
-                                                    }
-                                                </span>
-                                            </div>
-                                        </CListGroupItem>
-                                        {task.cron_expression && (
-                                            <CListGroupItem>
-                                                <div className="d-flex justify-content-between">
-                                                    <span>Cron 表达式:</span>
-                                                    <span>{task.cron_expression}</span>
-                                                </div>
-                                            </CListGroupItem>
-                                        )}
-                                        {task.next_run_time && (
-                                            <CListGroupItem>
-                                                <div className="d-flex justify-content-between">
-                                                    <span>下次执行时间:</span>
-                                                    <span>{new Date(task.next_run_time).toLocaleString()}</span>
-                                                </div>
-                                            </CListGroupItem>
-                                        )}
-                                        <CListGroupItem>
-                                            <div className="d-flex justify-content-between">
-                                                <span>进程ID:</span>
-                                                <span>{task.pid || '-'}</span>
-                                            </div>
-                                        </CListGroupItem>
-                                    </CListGroup>
-                                </CCardBody>
-                            </CCard>
-                        </CCol>
-
-                        <CCol md={6}>
-                            <CCard className="mb-4">
-                                <CCardHeader>
-                                    <h5 className="mb-0">执行历史</h5>
-                                </CCardHeader>
-                                <CCardBody>
-                                    {executionHistory.length > 0 ? (
-                                        <CListGroup>
-                                            {executionHistory.map((execution, index) => (
-                                                <CListGroupItem key={index} className="d-flex justify-content-between align-items-center">
-                                                    <div>
-                                                        <div>
-                                                            <span className="fw-bold me-2">执行ID:</span>
-                                                            <span className="text-muted">{execution.execution_id?.substring(0, 8)}...</span>
-                                                        </div>
-                                                        <div>
-                                                            <small>
-                                                                <span className="text-muted">{new Date(execution.start_time).toLocaleString()}</span>
-                                                                {execution.duration && (
-                                                                    <span className="ms-2">
-                                                                        耗时: {execution.duration}秒
-                                                                    </span>
-                                                                )}
-                                                            </small>
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <CBadge color={
-                                                            execution.status === 'running' ? 'primary' :
-                                                                execution.status === 'completed' ? 'success' :
-                                                                    execution.status === 'failed' ? 'danger' : 'secondary'
-                                                        } className="me-2">
-                                                            {execution.status}
-                                                        </CBadge>
-                                                        <CButton
-                                                            color="info"
-                                                            size="sm"
-                                                            onClick={() => openLogModal(execution.execution_id)}
-                                                        >
-                                                            查看日志
-                                                        </CButton>
+                    <CTabContent>
+                        <CTabPane visible={activeTab === 1}>
+                            <CRow className="mb-4">
+                                <CCol md={6}>
+                                    <CCard className="mb-4">
+                                        <CCardHeader>
+                                            <h5 className="mb-0">基本信息</h5>
+                                        </CCardHeader>
+                                        <CCardBody>
+                                            <CListGroup flush>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>任务ID:</span>
+                                                        <span>{task.task_id}</span>
                                                     </div>
                                                 </CListGroupItem>
-                                            ))}
-                                        </CListGroup>
-                                    ) : (
-                                        <div className="text-center py-4 text-muted">
-                                            <span className="h4">🕓</span>
-                                            <p>暂无执行历史记录</p>
-                                        </div>
-                                    )}
-                                </CCardBody>
-                            </CCard>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>状态:</span>
+                                                        <CBadge color={
+                                                            task.status === 'running' ? 'primary' :
+                                                                task.status === 'success' || task.status === 'completed' ? 'success' :
+                                                                    task.status === 'failed' ? 'danger' :
+                                                                        task.status === 'scheduled' ? 'warning' :
+                                                                            'secondary'
+                                                        }>
+                                                            {task.status}
+                                                        </CBadge>
+                                                    </div>
+                                                </CListGroupItem>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>Conda环境:</span>
+                                                        <span>{task.conda_env}</span>
+                                                    </div>
+                                                </CListGroupItem>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>创建时间:</span>
+                                                        <span>{new Date(task.created_at || Date.now()).toLocaleString()}</span>
+                                                    </div>
+                                                </CListGroupItem>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>上次执行时间:</span>
+                                                        <span>{task.last_run_time ? new Date(task.last_run_time).toLocaleString() : '-'}</span>
+                                                    </div>
+                                                </CListGroupItem>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>执行时长:</span>
+                                                        <span>{task.last_run_duration ? `${task.last_run_duration}秒` : '-'}</span>
+                                                    </div>
+                                                </CListGroupItem>
 
-                            {performanceChartData && (
-                                <CCard className="mb-4">
-                                    <CCardHeader>
-                                        <h5 className="mb-0">性能指标</h5>
-                                    </CCardHeader>
-                                    <CCardBody>
-                                        <h6>执行时长历史</h6>
-                                        <CChart
-                                            type="line"
-                                            data={performanceChartData}
-                                            options={{
-                                                plugins: {
-                                                    legend: {
-                                                        position: 'top',
-                                                    }
-                                                },
-                                                scales: {
-                                                    y: {
-                                                        beginAtZero: true,
-                                                        title: {
-                                                            display: true,
-                                                            text: '耗时(秒)'
-                                                        }
-                                                    }
-                                                },
-                                                maintainAspectRatio: false,
-                                            }}
-                                            style={{ height: '200px' }}
-                                        />
+                                                {/* 如果是Git仓库任务，显示Git相关信息 */}
+                                                {task.is_git_task && (
+                                                    <CListGroupItem>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span>仓库类型:</span>
+                                                            <CBadge color="info">Git仓库任务</CBadge>
+                                                        </div>
+                                                    </CListGroupItem>
+                                                )}
+                                                {task.repo_url && (
+                                                    <CListGroupItem>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span>仓库URL:</span>
+                                                            <span className="text-break">{task.repo_url}</span>
+                                                        </div>
+                                                    </CListGroupItem>
+                                                )}
+                                                {task.repo_branch && (
+                                                    <CListGroupItem>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span>仓库分支:</span>
+                                                            <span>{task.repo_branch}</span>
+                                                        </div>
+                                                    </CListGroupItem>
+                                                )}
+                                                {task.last_synced && (
+                                                    <CListGroupItem>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span>最后同步时间:</span>
+                                                            <span>{new Date(task.last_synced).toLocaleString()}</span>
+                                                        </div>
+                                                    </CListGroupItem>
+                                                )}
+                                            </CListGroup>
+                                        </CCardBody>
+                                    </CCard>
 
-                                        {memoryChartData && (
-                                            <>
-                                                <h6 className="mt-4">内存使用历史</h6>
+                                    <CCard className="mb-4">
+                                        <CCardHeader>
+                                            <h5 className="mb-0">脚本信息</h5>
+                                        </CCardHeader>
+                                        <CCardBody>
+                                            <CListGroup flush>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>脚本路径:</span>
+                                                        <span className="text-break">{task.script_path}</span>
+                                                    </div>
+                                                </CListGroupItem>
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>任务类型:</span>
+                                                        <span>
+                                                            {task.cron_expression ?
+                                                                '定时调度' : '立即执行'
+                                                            }
+                                                        </span>
+                                                    </div>
+                                                </CListGroupItem>
+                                                {task.cron_expression && (
+                                                    <CListGroupItem>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span>Cron 表达式:</span>
+                                                            <span>{task.cron_expression}</span>
+                                                        </div>
+                                                    </CListGroupItem>
+                                                )}
+                                                {task.next_run_time && (
+                                                    <CListGroupItem>
+                                                        <div className="d-flex justify-content-between">
+                                                            <span>下次执行时间:</span>
+                                                            <span>{new Date(task.next_run_time).toLocaleString()}</span>
+                                                        </div>
+                                                    </CListGroupItem>
+                                                )}
+                                                <CListGroupItem>
+                                                    <div className="d-flex justify-content-between">
+                                                        <span>进程ID:</span>
+                                                        <span>{task.pid || '-'}</span>
+                                                    </div>
+                                                </CListGroupItem>
+                                            </CListGroup>
+                                        </CCardBody>
+                                    </CCard>
+                                </CCol>
+
+                                <CCol md={6}>
+                                    <CCard className="mb-4">
+                                        <CCardHeader>
+                                            <h5 className="mb-0">执行历史</h5>
+                                        </CCardHeader>
+                                        <CCardBody>
+                                            {executionHistory.length > 0 ? (
+                                                <CListGroup>
+                                                    {executionHistory.map((execution, index) => (
+                                                        <CListGroupItem key={index} className="d-flex justify-content-between align-items-center">
+                                                            <div>
+                                                                <div>
+                                                                    <span className="fw-bold me-2">执行ID:</span>
+                                                                    <span className="text-muted">{execution.execution_id?.substring(0, 8)}...</span>
+                                                                </div>
+                                                                <div>
+                                                                    <small>
+                                                                        <span className="text-muted">{new Date(execution.start_time).toLocaleString()}</span>
+                                                                        {execution.duration && (
+                                                                            <span className="ms-2">
+                                                                                耗时: {execution.duration}秒
+                                                                            </span>
+                                                                        )}
+                                                                    </small>
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <CBadge color={
+                                                                    execution.status === 'running' ? 'primary' :
+                                                                        execution.status === 'completed' ? 'success' :
+                                                                            execution.status === 'failed' ? 'danger' : 'secondary'
+                                                                } className="me-2">
+                                                                    {execution.status}
+                                                                </CBadge>
+                                                                <CButton
+                                                                    color="info"
+                                                                    size="sm"
+                                                                    onClick={() => openLogModal(execution.execution_id)}
+                                                                >
+                                                                    查看日志
+                                                                </CButton>
+                                                            </div>
+                                                        </CListGroupItem>
+                                                    ))}
+                                                </CListGroup>
+                                            ) : (
+                                                <div className="text-center py-4 text-muted">
+                                                    <span className="h4">🕓</span>
+                                                    <p>暂无执行历史记录</p>
+                                                </div>
+                                            )}
+                                        </CCardBody>
+                                    </CCard>
+
+                                    {performanceChartData && (
+                                        <CCard className="mb-4">
+                                            <CCardHeader>
+                                                <h5 className="mb-0">性能指标</h5>
+                                            </CCardHeader>
+                                            <CCardBody>
+                                                <h6>执行时长历史</h6>
                                                 <CChart
                                                     type="line"
-                                                    data={memoryChartData}
+                                                    data={performanceChartData}
                                                     options={{
                                                         plugins: {
                                                             legend: {
@@ -428,7 +480,7 @@ const TaskDetail = () => {
                                                                 beginAtZero: true,
                                                                 title: {
                                                                     display: true,
-                                                                    text: '内存 (MB)'
+                                                                    text: '耗时(秒)'
                                                                 }
                                                             }
                                                         },
@@ -436,13 +488,51 @@ const TaskDetail = () => {
                                                     }}
                                                     style={{ height: '200px' }}
                                                 />
-                                            </>
-                                        )}
-                                    </CCardBody>
-                                </CCard>
-                            )}
-                        </CCol>
-                    </CRow>
+
+                                                {memoryChartData && (
+                                                    <>
+                                                        <h6 className="mt-4">内存使用历史</h6>
+                                                        <CChart
+                                                            type="line"
+                                                            data={memoryChartData}
+                                                            options={{
+                                                                plugins: {
+                                                                    legend: {
+                                                                        position: 'top',
+                                                                    }
+                                                                },
+                                                                scales: {
+                                                                    y: {
+                                                                        beginAtZero: true,
+                                                                        title: {
+                                                                            display: true,
+                                                                            text: '内存 (MB)'
+                                                                        }
+                                                                    }
+                                                                },
+                                                                maintainAspectRatio: false,
+                                                            }}
+                                                            style={{ height: '200px' }}
+                                                        />
+                                                    </>
+                                                )}
+                                            </CCardBody>
+                                        </CCard>
+                                    )}
+                                </CCol>
+                            </CRow>
+                        </CTabPane>
+
+                        {/* 脚本更新标签页 */}
+                        <CTabPane visible={activeTab === 2}>
+                            <TaskScriptUpdater
+                                taskId={parseInt(taskId)}
+                                taskName={task.task_name}
+                                status={task.status}
+                                onSuccess={handleScriptUpdateSuccess}
+                            />
+                        </CTabPane>
+                    </CTabContent>
                 </>
             )}
 

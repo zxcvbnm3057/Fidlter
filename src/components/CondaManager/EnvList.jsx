@@ -103,22 +103,15 @@ const EnvList = ({ environments, envStats, loading, onShowDetails, onShowEdit, o
         }
     };
 
-    // 渲染使用率单元格
-    const renderUsageCell = (env) => {
-        // 查找环境在统计数据中的使用率
-        const usageData = envStats?.environment_usage?.find(item => item.name === env.name);
-        const usagePercent = usageData ? usageData.usage_percent : 0;
+    // 渲染任务数单元格
+    const renderTaskCountCell = (env) => {
+        // 查找环境在统计数据中的任务数
+        const taskData = envStats?.environment_usage?.find(item => item.name === env.name);
+        const taskCount = taskData ? taskData.task_count : 0;
 
         return (
             <div className="d-flex align-items-center">
-                <div className="me-2" style={{ width: '60%' }}>
-                    <CProgress
-                        value={usagePercent}
-                        color="info"
-                        height={8}
-                    />
-                </div>
-                <small>{usagePercent}%</small>
+                <small>{taskCount}</small>
             </div>
         );
     };
@@ -177,9 +170,9 @@ const EnvList = ({ environments, envStats, loading, onShowDetails, onShowEdit, o
         },
         {
             key: 'usage',
-            title: '使用率',
+            title: '任务数',
             dataIndex: 'name',
-            render: (_, record) => renderUsageCell(record)
+            render: (_, record) => renderTaskCountCell(record)
         },
         {
             key: 'actions',

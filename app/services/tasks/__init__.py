@@ -2,6 +2,10 @@ from app.services.tasks.scheduler import Scheduler
 from app.services.tasks.executor import TaskExecutor
 from app.services.tasks.history import TaskHistory
 from app.services.tasks.stats import TaskStats
+from app.services.tasks.file_manager import TaskFileManager
+from app.services.tasks.operation_manager import TaskOperationManager
+
+__all__ = ['TaskFileManager', 'TaskOperationManager']
 
 
 class TaskScheduler:
@@ -18,9 +22,9 @@ class TaskScheduler:
         self.scheduler.set_conda_manager(conda_manager)
 
         # 属性转发 - 保持与原始API兼容
-        self.tasks = self.scheduler.tasks
+        self.tasks = self.scheduler.repository.tasks
         self.task_history = self.history.task_history
-        self.next_task_id = self.scheduler.next_task_id
+        self.next_task_id = self.scheduler.repository.next_task_id
         self.lock = self.scheduler.lock
 
     def set_conda_manager(self, conda_manager):
@@ -37,8 +41,25 @@ class TaskScheduler:
                       cron_expression=None,
                       delay_seconds=None,
                       priority="normal",
-                      memory_limit=None):
-        """调度一个新任务"""
+                      memory_limit=None,
+                      command=None):
+        """调度一个新任务
+        
+        参数:
+            script_path: 脚本路径
+            conda_env: 使用的Conda环境名称
+            task_name: 任务名称（可选，如不提供则使用脚本名称）
+            requirements: requirements.txt内容（可选）
+            reuse_env: 是否复用现有环境（如果True，尝试在现有环境中安装requirements）
+            cron_expression: Cron表达式（可选，用于周期性执行任务）
+            delay_seconds: 延迟执行的秒数（可选，用于一次性延迟执行）
+            priority: 任务优先级，可以是"high"、"normal"或"low"，默认为"normal" 
+            memory_limit: 内存限制（MB），如果为None则不限制
+            command: 自定义启动命令，如果为None则自动基于脚本构建命令
+            
+        返回:
+            创建的任务对象或错误信息
+        """
         return self.scheduler.schedule_task(script_path, conda_env, task_name, requirements, reuse_env, cron_expression,
                                             delay_seconds, priority, memory_limit)
 

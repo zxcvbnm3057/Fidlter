@@ -5,6 +5,14 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* 强制隐藏Chart.js的tooltip元素 */
+.chartjs-tooltip {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
 /* 数据表格样式 */
 .cursor-pointer {
     cursor: pointer !important;

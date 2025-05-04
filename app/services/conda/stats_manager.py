@@ -90,7 +90,7 @@ class StatsManager:
         return active_envs
 
     def _calculate_environment_usage(self, envs):
-        """计算环境使用情况，不再计算包统计"""
+        """计算环境使用情况，返回任务计数而非使用率百分比"""
         env_usage = []
         latest_created = None
         latest_time = None
@@ -98,8 +98,8 @@ class StatsManager:
         for env_path in envs:
             env_name = os.path.basename(env_path)
 
-            # 计算使用率
-            usage_percent = self._get_env_usage_percent(env_name)
+            # 计算使用该环境的任务数量
+            task_count = self._get_env_task_count(env_name)
 
             # 获取环境创建时间
             created_time = self._get_env_creation_time(env_path)
@@ -111,24 +111,18 @@ class StatsManager:
                 latest_created = {"name": env_name, "created_at": created_at}
 
             # 添加到使用情况列表
-            env_usage.append({"name": env_name, "usage_percent": round(usage_percent)})
+            env_usage.append({"name": env_name, "task_count": task_count})
 
         return env_usage, latest_created
 
-    def _get_env_usage_percent(self, env_name):
-        """获取环境使用率百分比"""
-        # 计算使用率 - 被多少任务使用
-        usage_count = 0
+    def _get_env_task_count(self, env_name):
+        """获取引用环境的任务数量"""
+        task_count = 0
         if self.task_scheduler:
             for task in self.task_scheduler.tasks:
                 if task.get('conda_env') == env_name:
-                    usage_count += 1
-
-        # 计算使用百分比
-        total_tasks = len(self.task_scheduler.tasks) if self.task_scheduler else 0
-        usage_percent = (usage_count / total_tasks * 100) if total_tasks > 0 else 0
-
-        return usage_percent
+                    task_count += 1
+        return task_count
 
     def _get_env_creation_time(self, env_path):
         """获取环境创建时间，如果无法获取则返回当前时间并记录日志"""

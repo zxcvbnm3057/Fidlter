@@ -38,6 +38,9 @@ importers:
       chart.js:
         specifier: ^4.4.9
         version: 4.4.9
+      chartjs-plugin-datalabels:
+        specifier: ^2.2.0
+        version: 2.2.0(chart.js@4.4.9)
       cron-parser:
         specifier: ^5.1.1
         version: 5.1.1
@@ -1996,6 +1999,11 @@ packages:
   chart.js@4.4.9:
     resolution: {integrity: sha512-EyZ9wWKgpAU0fLJ43YAEIF8sr5F2W3LqbS40ZJyHIner2lY14ufqv2VMp69MAiZ2rpwxEUxEhIH/0U3xyRynxg==}
     engines: {pnpm: '>=8'}
+
+  chartjs-plugin-datalabels@2.2.0:
+    resolution: {integrity: sha512-14ZU30lH7n89oq+A4bWaJPnAG8a7ZTk7dKf48YAzMvJjQtjrgg5Dpk9f+LbjCF6bpx3RAGTeL13IXpKQYyRvlw==}
+    peerDependencies:
+      chart.js: '>=3.0.0'
 
   check-types@11.2.3:
     resolution: {integrity: sha512-+67P1GkJRaxQD6PKK0Et9DhwQB+vGg3PM5+aavopCpZT1lj9jeqfvpgTLAWErNj8qApkkmXlu/Ug74kmhagkXg==}
@@ -8322,6 +8330,10 @@ snapshots:
   chart.js@4.4.9:
     dependencies:
       '@kurkle/color': 0.3.4
+
+  chartjs-plugin-datalabels@2.2.0(chart.js@4.4.9):
+    dependencies:
+      chart.js: 4.4.9
 
   check-types@11.2.3: {}
 

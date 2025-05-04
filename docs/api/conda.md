@@ -2,6 +2,8 @@
 
 本文档描述了Conda Task Manager系统的Conda环境管理相关API接口。
 
+**注意**：系统会在用户对环境进行操作（创建、删除、重命名、增减包）时，自动更新相应的环境配置信息，并持久化存储到`/var/fidlter/data/env_info`目录下。所有数据在系统启动时从磁盘加载。
+
 ## 获取环境列表
 
 **请求**:
@@ -20,7 +22,8 @@
       "name": "环境名称",
       "python_version": "Python版本",
       "created_at": "创建时间",
-      "basic_info_only": true  // 表示此环境信息是基本信息，详细信息需要单独加载
+      "package_count": 42,        // 已安装的包数量
+      "is_managed_by_container": true  // 指示环境由容器自动管理
     }
   ]
   ```
@@ -37,83 +40,8 @@
 - 推荐在环境数量较多或网络延迟较高的情况下使用流式响应
 
 **说明**:
-- 此接口只返回基本环境信息，不包含磁盘空间和包数量等耗时计算的信息
-- 默认情况下 `basic_info_only` 为 `true`，表示该环境信息不完整
-- 通过调用 `/api/conda/environment/<env_name>/extended-info` 可以获取环境的扩展信息（磁盘使用量和包数量）
-
-## 获取环境扩展信息
-
-**请求**:
-
-- 方法: `GET`
-- URL: `/api/conda/environment/<env_name>/extended-info`
-
-**响应**:
-
-- 状态码: 200 (成功)
-- 内容: 环境扩展信息
-  ```json
-  {
-    "name": "环境名称",
-    "disk_usage": 1.2,         // 环境占用空间（GB），如无法获取则为0
-    "package_count": 42,       // 安装的包数量
-    "is_size_accurate": true   // 磁盘占用数据是否准确
-  }
-  ```
-
-**说明**:
-- 此接口返回单个环境的扩展信息，包括磁盘使用量和包数量等需要耗时计算的信息
-- `disk_usage`是环境占用的磁盘空间（GB）
-  - 如果无法获取磁盘使用量，该值为0，前端将显示"未知"
-- `is_size_accurate`表示磁盘占用数据是否准确
-  - 即使`disk_usage`为0，只要`is_size_accurate`为true，前端也不应显示警告信息
-  - 只有当`is_size_accurate`为false时，前端才显示"数据可能不准确"的警告
-- `package_count`包含环境中已安装的包数量
-
-## 获取环境统计信息
-
-**请求**:
-
-- 方法: `GET`
-- URL: `/api/conda/stats`
-
-**响应**:
-
-- 状态码: 200 (成功)
-- 内容: 环境统计信息
-  ```json
-  {
-    "total_environments": 5,           // 总环境数
-    "active_environments": 3,          // 活跃环境数
-    "latest_created": {                // 最近创建的环境
-      "name": "环境名称",
-      "created_at": "2025-05-01 14:30:00"
-    },
-    "environment_usage": [             // 环境使用情况（用于饼图）
-      {
-        "name": "环境1",
-        "usage_percent": 45
-      },
-      {
-        "name": "环境2",
-        "usage_percent": 30
-      }
-    ]
-  }
-  ```
-
-**说明**:
-- 此接口不需要任何参数，直接获取Conda环境的简要统计数据
-- `total_environments` 是系统中所有Conda环境的数量
-- `active_environments` 是当前被任务使用的环境数量
-- `latest_created` 包含最近创建的环境信息
-  - 如果无法确定环境创建时间，将使用当前时间
-- `environment_usage` 包含各环境的使用率信息，用于生成饼图
-- 总磁盘使用量和包数量统计需要通过获取各环境扩展信息后在前端计算
-
-**注意**:
-- 前端应负责根据环境扩展信息计算总磁盘使用量
-- 当某些环境的磁盘使用量数据不准确时，前端应显示警告信息
+- 此接口返回容器提供的环境列表
+- `is_managed_by_container` 指示该环境由容器管理，前端应禁用某些手动管理操作
 
 ## 获取环境详情
 
@@ -131,11 +59,11 @@
     "name": "环境名称",
     "python_version": "3.9.7",
     "created_at": "2025-04-15",
+    "is_managed_by_container": true,
     "usage_stats": {
       "total_tasks": 24,
       "success_rate": 92,
-      "avg_execution_time": 45,
-      "disk_usage": 1.2
+      "avg_execution_time": 45
     },
     "packages": [
       {
@@ -161,19 +89,14 @@
 **说明**:
 - 此接口通过环境名称获取指定环境的详细信息
 - `python_version` 是环境中安装的Python版本
-  - 如果无法获取Python版本，返回值可能为"Unknown"或null
-- `created_at` 是环境的创建日期
-  - 如果无法确定环境创建日期，将使用当前时间并在前端显示提示
+- `created_at` 是环境的创建日期（从容器记录获取）
+- `is_managed_by_container` 指示该环境由容器管理
 - `usage_stats` 包含环境的使用统计信息，如总任务数、成功率等
-  - `disk_usage` 如果无法获取，将返回0，前端显示为"未知"
-  - `success_rate` 和 `avg_execution_time` 在无法统计时也可能为0或null
-- `packages` 包含环境中已安装的主要包列表及其版本
-  - 如果无法获取包信息，此数组可能为空，前端会显示相应提示
+- `packages` 包含环境中已安装的包列表及其版本
 
 **数据完整性说明**:
-- 环境详情可能会包含无法准确获取的数据，系统会清晰标识这些数据
-- 前端将在相应位置显示"数据不完整"、"未知"或其他提示，而不是显示可能不准确的估算值
-- 响应中的0或null值可能表示该数据实际无法获取，前端会适当处理这些情况
+- 环境详情会尽量保持与容器内实际环境一致
+- 系统会同步更新环境配置元数据，以反映容器中环境的变化
 
 ## 获取可用Python版本
 
@@ -209,8 +132,8 @@
 
 **说明**:
 - 此接口不需要任何参数，直接返回可用的Python版本列表
-- 系统会首先尝试从Conda官网获取最新的Python版本列表
-- 如果获取失败（网络错误、超时等），系统会返回预定义的Python版本列表
+- 系统会首先尝试从容器获取可用的Python版本列表
+- 如果获取失败，系统会返回预定义的Python版本列表
 - `source`字段指示数据来源，可用于前端显示数据来源提示
 
 ## 创建新环境
@@ -225,17 +148,16 @@
 
 ```json
 {
-  "name": "环境名称",
+  "name": "新环境名称",
   "python_version": "3.10",
-  "packages": ["numpy", "pandas==1.5.0", "matplotlib>=3.4.0"]
+  "packages": ["numpy", "pandas", "matplotlib"]
 }
 ```
 
 **说明**:
 - `name` (必需): 新环境的名称
-- `python_version` (可选): 指定Python版本，如"3.6"、"3.10"等，默认使用系统默认Python版本
-- `packages` (可选): 初始安装的包列表，每个元素表示一个包，可以包含版本约束，如"numpy==1.22.3"或"pandas>=1.3.0"
-- **注意**: 前端输入时必须限制为每行一个包，不支持一行多个包或逗号分隔格式
+- `python_version` (必需): 环境中要安装的Python版本
+- `packages` (可选): 要安装的包列表，每个元素可以是单纯的包名或带版本限制
 
 **响应**:
 
@@ -246,244 +168,18 @@
     "success": true,
     "message": "Environment created successfully",
     "env": {
-      "name": "环境名称",
+      "name": "新环境名称",
       "python_version": "3.10",
-      "created_at": "创建时间"
+      "created_at": "2025-05-03 12:34:56",
+      "package_count": 3
     }
   }
   ```
 
-## 修改环境
-
-**请求**:
-
-- 方法: `PUT`
-- URL: `/api/conda/environment/<env_name>`
-- Content-Type: `application/json`
-- Cookie: `session=<会话ID>`
-
-**请求体**:
-
-```json
-{
-  "new_name": "新环境名称"
-}
-```
-
-**响应**:
-
-- 状态码: 200 (修改成功)
-- 内容: 修改结果
-
-  ```json
-  {
-    "success": true,
-    "message": "Environment renamed successfully",
-    "old_name": "原环境名称",
-    "new_name": "新环境名称",
-    "updated_tasks_count": 2
-  }
-  ```
-- 状态码: 400 (新环境名已存在)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Environment with this name already exists",
-    "error": "Cannot rename environment to an existing name"
-  }
-  ```
-- 状态码: 404 (环境不存在)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Environment not found"
-  }
-  ```
-- 状态码: 403 (权限不足)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Unauthorized - Insufficient privileges",
-    "error": "You do not have permission to modify this environment"
-  }
-  ```
-- 状态码: 401 (未认证)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Authentication required",
-    "error": "Please log in to perform this operation"
-  }
-  ```
-
-## 安装包
-
-**请求**:
-
-- 方法: `POST`
-- URL: `/api/conda/environment/<env_name>/packages`
-- Content-Type: `application/json`
-- Cookie: `session=<会话ID>`
-
-**请求体**:
-
-```json
-{
-  "packages": ["numpy", "pandas==1.5.0", "matplotlib>=3.4.0"]
-}
-```
-
 **说明**:
-- `packages`: 要安装的包列表，每个元素表示一个包，可以包含版本约束
-- **注意**: 前端输入时必须限制为每行一个包，不支持一行多个包或逗号分隔格式
-
-**响应**:
-
-- 状态码: 200 (安装成功)
-- 内容: 安装结果
-
-  ```json
-  {
-    "success": true,
-    "message": "Packages installed successfully",
-    "environment": "环境名称",
-    "installed_packages": ["numpy", "pandas==1.5.0", "matplotlib>=3.4.0"]
-  }
-  ```
-- 状态码: 400 (环境被任务使用中)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Cannot modify packages in environment that is referenced by running tasks",
-    "error": "Environment is in use by tasks",
-    "referencing_tasks": ["任务1脚本路径", "任务2脚本路径"]
-  }
-  ```
-- 状态码: 400 (安装失败)
-- 内容: 错误详情
-
-  ```json
-  {
-    "success": false,
-    "message": "Failed to install packages",
-    "failed_packages": ["不存在的包名", "有冲突的包名"],
-    "error_details": [
-      "Package '不存在的包名' not found in available channels",
-      "Package '有冲突的包名' has conflicts with existing packages"
-    ],
-    "error": "完整的命令行错误输出..."
-  }
-  ```
-- 状态码: 404 (环境不存在)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Environment not found"
-  }
-  ```
-- 状态码: 403 (权限不足)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Unauthorized - Insufficient privileges",
-    "error": "You do not have permission to modify packages in this environment"
-  }
-  ```
-- 状态码: 401 (未认证)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Authentication required",
-    "error": "Please log in to perform this operation"
-  }
-  ```
-
-## 移除包
-
-**请求**:
-
-- 方法: `DELETE`
-- URL: `/api/conda/environment/<env_name>/packages`
-- Content-Type: `application/json`
-- Cookie: `session=<会话ID>`
-
-**请求体**:
-
-```json
-{
-  "packages": ["numpy", "pandas"]
-}
-```
-
-**响应**:
-
-- 状态码: 200 (移除成功)
-- 内容: 移除结果
-
-  ```json
-  {
-    "success": true,
-    "message": "Packages removed successfully",
-    "environment": "环境名称",
-    "removed_packages": ["numpy", "pandas"]
-  }
-  ```
-- 状态码: 400 (环境被任务使用中)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Cannot remove packages from environment that is referenced by running tasks",
-    "error": "Environment is in use by tasks",
-    "referencing_tasks": ["任务1脚本路径", "任务2脚本路径"]
-  }
-  ```
-- 状态码: 404 (环境不存在)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Environment not found"
-  }
-  ```
-- 状态码: 403 (权限不足)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Unauthorized - Insufficient privileges",
-    "error": "You do not have permission to remove packages from this environment"
-  }
-  ```
-- 状态码: 401 (未认证)
-- 内容:
-
-  ```json
-  {
-    "success": false,
-    "message": "Authentication required",
-    "error": "Please log in to perform this operation"
-  }
-  ```
+- 此接口用于创建新的Conda环境
+- 系统会自动记录环境的配置元数据，并持久化保存到`/var/fidlter/data/env_info`目录
+- 当提供packages参数时，系统会自动安装指定的包并更新环境配置
 
 ## 删除环境
 
@@ -494,44 +190,203 @@
 
 **响应**:
 
-- 状态码: 204 (删除成功，无内容)
-- 状态码: 400 (环境被任务引用)
-- 内容:
-
+- 状态码: 200 (成功)
+- 内容: 删除结果
   ```json
   {
-    "success": false,
-    "message": "Cannot delete environment that is referenced by tasks",
-    "error": "Environment is in use by tasks",
-    "referencing_tasks": ["任务1脚本路径", "任务2脚本路径"]
+    "success": true,
+    "message": "Environment 'env_name' deleted successfully"
   }
   ```
-- 状态码: 404 (环境不存在)
-- 内容:
 
+**说明**:
+- 此接口用于删除指定的Conda环境
+- 系统会自动同步删除相应的环境配置元数据
+- 如果环境正在被任务使用，将返回错误
+
+## 重命名环境
+
+**请求**:
+
+- 方法: `PUT`
+- URL: `/api/conda/environment/<env_name>/rename`
+- Content-Type: `application/json`
+
+**请求体**:
+
+```json
+{
+  "new_name": "新环境名称"
+}
+```
+
+**说明**:
+- `new_name` (必需): 环境的新名称
+
+**响应**:
+
+- 状态码: 200 (成功)
+- 内容: 重命名结果
   ```json
   {
-    "success": false,
-    "message": "Environment not found"
+    "success": true,
+    "message": "Environment renamed successfully",
+    "old_name": "旧环境名称",
+    "new_name": "新环境名称",
+    "updated_tasks_count": 2  // 更新引用的任务数量
   }
   ```
-- 状态码: 403 (权限不足)
-- 内容:
 
+**说明**:
+- 此接口用于重命名指定的Conda环境
+- 系统会自动更新所有引用该环境的任务
+- 系统会自动同步更新环境配置元数据
+
+## 在环境中安装包
+
+**请求**:
+
+- 方法: `POST`
+- URL: `/api/conda/environment/<env_name>/packages`
+- Content-Type: `application/json`
+
+**请求体**:
+
+```json
+{
+  "packages": ["numpy", "pandas==1.5.0", "matplotlib>=3.4.0"]
+}
+```
+
+**说明**:
+- `packages` (必需): 要安装的包列表，每个元素表示一个包，可以包含版本约束
+
+**响应**:
+
+- 状态码: 200 (成功)
+- 内容: 安装结果
   ```json
   {
-    "success": false,
-    "message": "Unauthorized - Insufficient privileges",
-    "error": "You do not have permission to delete this environment"
+    "success": true,
+    "message": "Packages installed successfully",
+    "installed_packages": ["numpy-1.24.3", "pandas-1.5.0", "matplotlib-3.7.1"],
+    "failed_packages": []
   }
   ```
-- 状态码: 401 (未认证)
-- 内容:
 
+**说明**:
+- 此接口用于在指定环境中安装包
+- 系统会自动同步更新环境的配置元数据
+- 如果某些包安装失败，将在`failed_packages`字段中列出
+
+## 从环境中移除包
+
+**请求**:
+
+- 方法: `DELETE`
+- URL: `/api/conda/environment/<env_name>/packages`
+- Content-Type: `application/json`
+
+**请求体**:
+
+```json
+{
+  "packages": ["numpy", "pandas", "matplotlib"]
+}
+```
+
+**说明**:
+- `packages` (必需): 要移除的包名列表
+
+**响应**:
+
+- 状态码: 200 (成功)
+- 内容: 移除结果
   ```json
   {
-    "success": false,
-    "message": "Authentication required",
-    "error": "Please log in to perform this operation"
+    "success": true,
+    "message": "Packages removed successfully",
+    "removed_packages": ["numpy", "pandas", "matplotlib"],
+    "failed_packages": []
   }
   ```
+
+**说明**:
+- 此接口用于从指定环境中移除包
+- 系统会自动同步更新环境的配置元数据
+- 如果某些包移除失败，将在`failed_packages`字段中列出
+
+## 获取环境统计信息
+
+**请求**:
+
+- 方法: `GET`
+- URL: `/api/conda/stats`
+
+**响应**:
+
+- 状态码: 200 (成功)
+- 内容: 环境统计信息
+  ```json
+  {
+    "total_environments": 5,
+    "active_environments": 3,
+    "latest_created": {
+      "name": "data_science",
+      "created_at": "2025-05-01 14:30:22"
+    },
+    "environment_usage": [
+      {
+        "name": "ml_env",
+        "task_count": 12
+      },
+      {
+        "name": "data_science",
+        "task_count": 5
+      },
+      {
+        "name": "web_dev",
+        "task_count": 0
+      }
+    ]
+  }
+  ```
+
+**说明**:
+- 此接口返回所有环境的统计概览信息
+- `total_environments` 表示系统中的总环境数
+- `active_environments` 表示被任务引用的环境数
+- `latest_created` 表示最近创建的环境信息
+- `environment_usage` 列出每个环境被任务引用的数量，`task_count` 表示引用该环境的任务数
+
+## 数据持久化说明
+
+系统对于环境配置元数据的持久化遵循以下规则：
+
+1. **存储位置**: 环境配置元数据存储在`/var/fidlter/data/env_info`目录下，每个环境一个JSON文件
+2. **文件命名**: 文件名为`<环境名>.json`
+3. **数据格式**: 每个文件包含环境名称、Python版本、创建时间、包列表等信息
+4. **实时更新**: 环境配置在创建、删除、重命名或修改包列表时立即更新
+5. **启动加载**: 系统启动时自动从磁盘加载所有环境配置元数据
+
+## 环境配置元数据格式
+
+```json
+{
+  "name": "环境名称",
+  "python_version": "3.10",
+  "created_at": "2025-05-03 12:34:56",
+  "updated_at": "2025-05-03 14:22:18",
+  "packages": [
+    {
+      "name": "numpy",
+      "version": "1.24.3"
+    },
+    {
+      "name": "pandas",
+      "version": "2.0.1"
+    }
+  ]
+}
+```
+````

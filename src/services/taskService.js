@@ -68,5 +68,15 @@ export const taskService = {
     updateTask: async (taskId, taskData) => {
         const response = await axios.put(`/api/tasks/${taskId}`, taskData);
         return response.data;
+    },
+
+    // 更新任务脚本
+    updateTaskScript: async (taskId, formData) => {
+        const response = await axios.post(`/api/tasks/${taskId}/update-script`, formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data'
+            }
+        });
+        return response.data;
     }
 };

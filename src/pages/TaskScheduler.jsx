@@ -10,20 +10,23 @@ import {
     fetchTaskStatsRequest
 } from '../redux/tasks/reducer';
 import { fetchEnvironmentsRequest } from '../redux/conda/reducer';
-import { CAlert, CSpinner } from '@coreui/react';
+import { CAlert, CSpinner, CNav, CNavItem, CNavLink, CTabContent, CTabPane } from '@coreui/react';
 
 // 导入拆分后的子组件
 import TaskStatistics from '../components/TaskScheduler/TaskStatistics';
 import TaskForm from '../components/TaskScheduler/TaskForm';
 import TaskList from '../components/TaskScheduler/TaskList';
+import GitTaskForm from '../components/TaskScheduler/GitTaskForm';
 
 const TaskSchedulerPage = () => {
     const dispatch = useDispatch();
     const [statusFilter, setStatusFilter] = useState('all'); // 添加状态筛选器状态
+    const [activeTab, setActiveTab] = useState(1); // 添加标签页状态，1: 普通任务表单, 2: Git任务表单
 
     // 从Redux store获取状态
     const { taskList, taskStats, loading: tasksLoading, error: tasksError } = useSelector(state => state.tasks);
     const { environments } = useSelector(state => state.conda);
+    const { error: gitError } = useSelector(state => state.git);
 
     useEffect(() => {
         // 分发获取任务列表请求action - 获取已定义的任务而非历史记录
@@ -81,6 +84,7 @@ const TaskSchedulerPage = () => {
         <div>
             <h2>任务调度器</h2>
             {tasksError && <CAlert color="danger">{tasksError}</CAlert>}
+            {gitError && <CAlert color="danger">{gitError}</CAlert>}
 
             {/* 任务统计信息 - 传递筛选处理函数和当前筛选状态 */}
             <TaskStatistics
@@ -90,12 +94,40 @@ const TaskSchedulerPage = () => {
                 currentFilter={statusFilter}
             />
 
-            {/* 任务创建表单 */}
-            <TaskForm
-                environments={environments}
-                onSubmit={handleSubmit}
-                loading={tasksLoading}
-            />
+            {/* 任务创建表单标签页 */}
+            <CNav variant="tabs" className="mt-4">
+                <CNavItem>
+                    <CNavLink
+                        active={activeTab === 1}
+                        onClick={() => setActiveTab(1)}
+                    >
+                        创建标准任务
+                    </CNavLink>
+                </CNavItem>
+                <CNavItem>
+                    <CNavLink
+                        active={activeTab === 2}
+                        onClick={() => setActiveTab(2)}
+                    >
+                        从Git仓库创建任务
+                    </CNavLink>
+                </CNavItem>
+            </CNav>
+
+            <CTabContent>
+                <CTabPane role="tabpanel" visible={activeTab === 1} className="pt-3">
+                    {/* 标准任务创建表单 */}
+                    <TaskForm
+                        environments={environments}
+                        onSubmit={handleSubmit}
+                        loading={tasksLoading}
+                    />
+                </CTabPane>
+                <CTabPane role="tabpanel" visible={activeTab === 2} className="pt-3">
+                    {/* Git仓库任务创建表单 */}
+                    <GitTaskForm />
+                </CTabPane>
+            </CTabContent>
 
             {/* 当前任务列表 - 传递当前筛选状态 */}
             <TaskList

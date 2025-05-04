@@ -26,7 +26,7 @@ const EnvDetailsModal = ({
 }) => {
     // 检查数据是否存在不完整情况
     const isDataIncomplete = (value) => {
-        return value === null || value === undefined || value === 0;
+        return value === null || value === undefined;
     }
 
     // 渲染警告标签
@@ -41,6 +41,19 @@ const EnvDetailsModal = ({
             );
         }
         return null;
+    }
+
+    // 格式化使用数据，如果环境没有任何任务，显示"无数据"
+    const formatUsageData = (value, unit = '') => {
+        if (envDetails.usage_stats?.total_tasks === 0) {
+            return '无数据';
+        }
+
+        if (isDataIncomplete(value)) {
+            return '未知';
+        }
+
+        return `${value}${unit}`;
     }
 
     return (
@@ -70,15 +83,15 @@ const EnvDetailsModal = ({
                                     <h6>使用统计</h6>
                                     <p><strong>总任务数:</strong> {envDetails.usage_stats?.total_tasks || 0}</p>
                                     <p>
-                                        <strong>成功率:</strong> {envDetails.usage_stats?.success_rate || 0}%
+                                        <strong>成功率:</strong> {formatUsageData(envDetails.usage_stats?.success_rate, "%")}
                                         {renderWarningBadge(envDetails.usage_stats?.success_rate, "无法获取准确的成功率数据")}
                                     </p>
                                     <p>
-                                        <strong>平均执行时间:</strong> {envDetails.usage_stats?.avg_execution_time || 0}秒
+                                        <strong>平均执行时间:</strong> {formatUsageData(envDetails.usage_stats?.avg_execution_time, "秒")}
                                         {renderWarningBadge(envDetails.usage_stats?.avg_execution_time, "无法获取准确的执行时间数据")}
                                     </p>
                                     <p>
-                                        <strong>磁盘占用:</strong> {envDetails.usage_stats?.disk_usage ? `${envDetails.usage_stats.disk_usage} GB` : '未知'}
+                                        <strong>磁盘占用:</strong> {formatUsageData(envDetails.usage_stats?.disk_usage, " GB")}
                                         {renderWarningBadge(envDetails.usage_stats?.disk_usage, "无法获取准确的磁盘占用数据")}
                                     </p>
                                 </CCol>

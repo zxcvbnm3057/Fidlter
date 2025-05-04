@@ -1,10 +1,39 @@
-import React from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { CChart } from '@coreui/react-chartjs';
+import { Chart as ChartJS, ArcElement, BarElement, CategoryScale, LinearScale, Title, Legend, Tooltip } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
+
+// 全局配置Chart.js，禁用悬浮提示
+ChartJS.defaults.plugins.tooltip = {
+    enabled: false
+};
+
+// 设置交互模式为null，防止悬浮事件触发
+ChartJS.defaults.interaction = {
+    mode: null,
+    intersect: false
+};
+
+// 仅注册所需的插件，不包括Tooltip
+ChartJS.register(
+    ArcElement,
+    BarElement,
+    CategoryScale,
+    LinearScale,
+    Title,
+    Legend,
+    ChartDataLabels  // 注册数据标签插件
+);
+
 import {
+    CCard,
+    CCardBody,
+    CCardHeader,
+    CCol,
     CRow,
-    CCol
+    CSpinner
 } from '@coreui/react';
 import { StatCard, ChartCard } from '../common';
-import { useMemo } from 'react';
 
 // 任务统计组件 - 显示基于任务列表的统计信息和未来任务预期
 const TaskStatistics = ({ taskList, taskStats, error, onFilterChange, currentFilter }) => {
@@ -91,13 +120,20 @@ const TaskStatistics = ({ taskList, taskStats, error, onFilterChange, currentFil
                 display: false,
             },
             tooltip: {
-                callbacks: {
-                    title: function (context) {
-                        return context[0].label;
-                    },
-                    label: function (context) {
-                        return `预期执行: ${context.parsed.y} 个任务`;
-                    }
+                enabled: false // 禁用默认悬浮提示
+            },
+            datalabels: {
+                formatter: (value) => `${value}`,
+                color: '#000',
+                anchor: 'end',
+                align: 'top',
+                offset: 0,
+                font: {
+                    weight: 'bold',
+                    size: 11
+                },
+                display: function (context) {
+                    return context.dataset.data[context.dataIndex] > 0; // 只有当值大于0时才显示标签
                 }
             }
         },
@@ -123,6 +159,25 @@ const TaskStatistics = ({ taskList, taskStats, error, onFilterChange, currentFil
         plugins: {
             legend: {
                 display: false,
+            },
+            tooltip: {
+                enabled: false // 禁用默认悬浮提示
+            },
+            datalabels: {
+                formatter: (value, ctx) => {
+                    return `${ctx.chart.data.labels[ctx.dataIndex]}: ${value}`;
+                },
+                color: '#000',
+                anchor: 'end',
+                align: 'top',
+                offset: 0,
+                font: {
+                    weight: 'bold',
+                    size: 11
+                },
+                display: function (context) {
+                    return context.dataset.data[context.dataIndex] > 0; // 只有当值大于0时才显示标签
+                }
             }
         },
         scales: {

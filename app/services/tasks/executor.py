@@ -64,11 +64,29 @@ class TaskExecutor:
             self.pause_events[task_id].set()  # 设置为非阻塞状态
 
         try:
-            # 创建命令
-            command = f"conda run -n {task['conda_env']} python {task['script_path']}"
+            # 创建命令 - 如果任务有自定义命令则使用，否则使用默认命令
+            if task.get('command'):
+                # 使用自定义命令
+                command = f"conda run -n {task['conda_env']} {task['command']}"
+            else:
+                # 使用默认命令
+                command = f"conda run -n {task['conda_env']} python {task['script_path']}"
+
+            # 记录使用的命令到日志
+            self.history.append_to_execution_log(
+                task_id, execution_id,
+                f"Executing command: {command}\nWorking directory: {os.path.dirname(task['script_path'])}\n\n")
+
+            # 设置工作目录为脚本所在目录
+            working_dir = os.path.dirname(task['script_path'])
 
             # 启动进程
-            process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            process = subprocess.Popen(command,
+                                       shell=True,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.STDOUT,
+                                       text=True,
+                                       cwd=working_dir)
 
             # 存储进程PID，便于发送信号
             task['process_pid'] = process.pid

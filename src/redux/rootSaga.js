@@ -2,6 +2,7 @@ import { all, fork } from 'redux-saga/effects';
 import authSagas from './auth/sagas';
 import tasksSagas from './tasks/sagas';
 import condaSagas from './conda/sagas';
+import gitSagas from './git';
 
 // 根Saga，组合所有模块的Saga
 export default function* rootSaga() {
@@ -9,5 +10,6 @@ export default function* rootSaga() {
         fork(authSagas),
         fork(tasksSagas),
         fork(condaSagas),
+        fork(gitSagas),
     ]);
 }

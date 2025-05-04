@@ -64,7 +64,7 @@ class TaskStats:
     def _get_basic_stats(self):
         """获取任务基本统计数据"""
         stats = {
-            'total': len(self.scheduler.tasks),
+            'total': len(self.scheduler.repository.tasks),
             'scheduled': 0,
             'running': 0,
             'completed': 0,
@@ -73,7 +73,7 @@ class TaskStats:
             'disabled_count': 0
         }
 
-        for task in self.scheduler.tasks:
+        for task in self.scheduler.repository.tasks:
             status = task.get('status', 'unknown')
             if status in stats:
                 stats[status] += 1
@@ -168,7 +168,7 @@ class TaskStats:
 
         # 遍历所有任务的历史记录
         for task_id, executions in self.history.task_history.items():
-            task = next((t for t in self.scheduler.tasks if t.get('task_id') == task_id), None)
+            task = next((t for t in self.scheduler.repository.tasks if t.get('task_id') == task_id), None)
             if not task:
                 continue
 
@@ -381,7 +381,7 @@ class TaskStats:
         upcoming = []
 
         # 获取所有状态为scheduled的任务
-        scheduled_tasks = [t for t in self.scheduler.tasks if t.get('status') == 'scheduled']
+        scheduled_tasks = [t for t in self.scheduler.repository.tasks if t.get('status') == 'scheduled']
 
         # 按下一次执行时间排序
         sorted_tasks = sorted(scheduled_tasks,

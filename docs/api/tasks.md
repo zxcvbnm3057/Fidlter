@@ -8,31 +8,31 @@
 
 - 方法: `POST`
 - URL: `/api/tasks`
-- Content-Type: `application/json`
+- Content-Type: `multipart/form-data`
 
-**请求体**:
+**请求参数**:
 
-```json
-{
-  "script": "Python脚本路径或内容",
-  "conda_env": "Conda环境名称",
-  "task_name": "任务名称（可选）",
-  "requirements": "requirements.txt的内容（可选）",
-  "reuse_env": false,
-  "cron_expression": "*/10 * * * *",       // Cron表达式（可选）
-  "delay_seconds": 3600                    // 延迟执行秒数（可选）
-}
+```
+script_file: 脚本文件（必填，单个文件）或ZIP包
+conda_env: Conda环境名称（必填）
+task_name: 任务名称（可选）
+requirements_file: requirements.txt文件（可选）或requirements内容
+reuse_env: 是否复用环境 (可选，true/false)
+cron_expression: Cron表达式（可选）
+delay_seconds: 延迟执行秒数（可选）
+command: 启动命令（可选，默认为"python main.py"）
 ```
 
-**参数说明**:
+**说明**:
 
-- `script`: 必填，Python脚本的路径或内容
+- `script_file`: 必填，上传的Python脚本文件或包含多个文件的ZIP压缩包
 - `conda_env`: 必填，任务执行时使用的Conda环境名称
 - `task_name`: 可选，任务的名称，如不提供则使用脚本文件名
-- `requirements`: 可选，requirements.txt的内容，用于安装任务所需的依赖
+- `requirements_file`: 可选，requirements.txt文件，用于安装任务所需的依赖
 - `reuse_env`: 可选，是否复用现有环境（true/false）
 - `cron_expression`: 可选，Cron表达式，用于定义周期性执行的时间规则（例如："*/10 * * * *" 表示每10分钟执行一次）
 - `delay_seconds`: 可选，延迟执行的秒数，用于一次性延迟执行
+- `command`: 可选，启动命令，例如："python main.py --arg value"，默认为"python main.py"
 
 **注意事项**:
 
@@ -40,6 +40,10 @@
 - 如果两者都不提供，任务将立即执行
 - 如果提供 `cron_expression`，任务将按照Cron表达式定义的周期性时间执行
 - 如果提供 `delay_seconds`，任务将在指定延迟后执行一次
+- 对于ZIP压缩包，所有文件将被解压到`/var/fidlter/scripts/{task_id}/`目录下
+- 对于ZIP压缩包，请不要在ZIP中包含额外的顶层目录，直接将所有文件放在ZIP的根目录中
+- 启动命令将在`/var/fidlter/scripts/{task_id}/`目录下执行
+- 如果上传ZIP包但未提供启动命令，默认使用`python main.py`
 
 **响应**:
 
@@ -53,7 +57,7 @@
     "task": {
       "task_id": 1,
       "task_name": "任务名称",
-      "script_path": "脚本内容",
+      "script_path": "脚本路径",
       "conda_env": "环境名称",
       "status": "scheduled",
       "created_at": "创建时间",
@@ -84,6 +88,16 @@
     "success": false,
     "message": "Cannot reuse non-existing environment",
     "error": "Environment 'env_name' not found"
+  }
+  ```
+- 状态码: 400 (无法处理上传的文件)
+- 内容:
+
+  ```json
+  {
+    "success": false,
+    "message": "Failed to process uploaded file",
+    "error": "详细错误信息"
   }
   ```
 - 状态码: 400 (cron表达式和delay_seconds同时提供)
@@ -739,7 +753,9 @@
   "script": "更新后的Python脚本路径或内容",
   "conda_env": "更新后的Conda环境名称",
   "cron_expression": "更新后的Cron表达式",
-  "requirements": "更新后的requirements.txt内容"
+  "requirements": "更新后的requirements.txt内容",
+  "delay_seconds": 7200,
+  "priority": "high"
 }
 ```
 
@@ -748,15 +764,20 @@
 - `task_name`: 可选，更新后的任务名称
 - `script`: 可选，更新后的Python脚本路径或内容
 - `conda_env`: 可选，更新后的Conda环境名称
-- `cron_expression`: 可选，更新后的Cron表达式
+- `cron_expression`: 可选，更新后的Cron表达式，如果提供此字段则会清除delay_seconds
+- `delay_seconds`: 可选，更新后的延迟执行秒数，如果提供此字段则会清除cron_expression
 - `requirements`: 可选，更新后的requirements.txt内容
+- `priority`: 可选，更新后的任务优先级，可选值为：'low', 'normal', 'high'
 
 **注意事项**:
 
 - 请求体中的所有字段都是可选的，只需提供要更新的字段
 - 未提供的字段将保持原值不变
-- 正在运行的任务不能更新，需要先停止任务
-- 如果提供了新的requirements，系统将会尝试在指定环境中安装这些要求
+- 正在运行的任务不能更新，需要先停止或暂停任务
+- 如果提供了新的requirements，系统将会自动在指定环境中安装这些要求
+- cron_expression和delay_seconds不能同时提供，否则会返回错误
+- 如果当前任务有延迟执行设置，提供cron_expression会取消原有延迟并改为定时任务
+- 如果当前任务有定时设置，提供delay_seconds会取消原有定时设置并改为延迟执行任务
 
 **响应**:
 
@@ -778,7 +799,13 @@
       "cron_expression": "更新后的表达式",
       "next_run_time": "更新后的下次执行时间",
       "last_run_time": "上次执行时间",
-      "last_run_duration": 45.2
+      "last_run_duration": 45.2,
+      "priority": "high"
+    },
+    "requirements_update": {
+      "success": true,
+      "installed_packages": ["package1", "package2"],
+      "failed_packages": []
     }
   }
   ```
@@ -803,6 +830,16 @@
     "error": "The provided cron expression is invalid: <具体错误详情>"
   }
   ```
+
+  或
+
+  ```json
+  {
+    "success": false,
+    "message": "Invalid update parameters",
+    "error": "Cannot specify both cron_expression and delay_seconds"
+  }
+  ```
 - 状态码: 400 (环境不存在)
 - 内容:
 
@@ -825,7 +862,106 @@
 
 **说明**:
 
-- 此接口用于更新已有任务的配置
+- 此接口用于全面更新已有任务的配置
 - 更新任务的cron表达式会导致任务调度时间重新计算
-- 更新任务的conda环境可能会导致任务行为变化
+- 更新任务的conda环境会自动处理环境依赖关系
 - 更新任务的脚本会影响后续执行，但不会影响历史执行记录
+- 当更新包含环境或requirements变更时，系统会自动同步环境配置
+
+## 更新任务脚本
+
+**请求**:
+
+- 方法: `POST`
+- URL: `/api/tasks/<task_id>/update-script`
+- Content-Type: `multipart/form-data`
+
+**请求参数**:
+
+```
+script_file: 脚本文件（必填，单个文件）或ZIP包
+command: 启动命令（可选，如不提供则使用当前命令或自动检测）
+force: 是否强制更新（可选，如果为true则会自动停止运行中的任务，默认为false）
+```
+
+**参数说明**:
+
+- `script_file`: 必填，更新的Python脚本文件或包含多个文件的ZIP压缩包，将替换任务的现有脚本文件
+- `command`: 可选，更新的启动命令，命令将在脚本目录下执行
+- `force`: 可选，布尔值，指示是否强制更新。当任务正在运行且此参数为true时，系统会先停止任务再更新脚本
+
+**注意事项**:
+
+- 如果任务状态为"running"或"scheduled"，且force参数为true，系统会自动停止任务后再更新脚本
+- 如果任务状态为"running"或"scheduled"，且force参数为false或未提供，将返回错误
+- 对于已是"paused"或"stopped"状态的任务，不受force参数影响
+- 上传的文件将替换任务目录中的所有现有文件
+- 对于ZIP压缩包，请不要在ZIP中包含额外的顶层目录，直接将所有文件放在ZIP的根目录中
+- 如果未提供新的启动命令，将保留现有命令。如果任务之前没有启动命令，系统将尝试自动检测主要脚本文件
+
+**响应**:
+
+- 状态码: 200 (成功)
+- 内容: 更新结果
+
+  ```json
+  {
+    "success": true,
+    "message": "Task script updated successfully",
+    "task": {
+      "task_id": 1,
+      "task_name": "任务名称",
+      "script_path": "更新后的脚本路径",
+      "command": "更新后的命令",
+      "status": "paused"
+    },
+    "updated_files": ["file1.py", "file2.py", "data.csv"]
+  }
+  ```
+- 状态码: 400 (任务不能被更新)
+- 内容:
+
+  ```json
+  {
+    "success": false,
+    "message": "Task script cannot be updated",
+    "error": "Cannot update a task with status: 'running'",
+    "current_status": "running"
+  }
+  ```
+- 状态码: 400 (无脚本文件提供)
+- 内容:
+
+  ```json
+  {
+    "success": false,
+    "message": "No script file provided",
+    "error": "Script file is required for update"
+  }
+  ```
+- 状态码: 400 (无法处理上传的文件)
+- 内容:
+
+  ```json
+  {
+    "success": false,
+    "message": "Failed to process uploaded file",
+    "error": "详细错误信息"
+  }
+  ```
+- 状态码: 404 (任务不存在)
+- 内容:
+
+  ```json
+  {
+    "success": false,
+    "message": "Task with ID 1 not found"
+  }
+  ```
+
+**说明**:
+
+- 此接口专门用于更新任务的脚本文件，不影响任务的其他配置
+- 更新脚本不会自动恢复任务执行，需要手动调用恢复任务接口
+- 所有更新的文件都将被保存到任务的专属目录：`/var/fidlter/scripts/{task_id}/`
+- 命令执行的工作目录将是`/var/fidlter/scripts/{task_id}/`

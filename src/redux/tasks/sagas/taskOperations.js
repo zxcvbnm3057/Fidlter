@@ -21,38 +21,9 @@ import {
 // 创建任务
 export function* createTaskSaga(action) {
     try {
-        // 调整任务参数格式，将前端参数转换为API格式
-        const taskData = { ...action.payload };
-
-        // 处理Conda环境
-        if (taskData.condaEnv) {
-            taskData.conda_env = taskData.condaEnv;
-            delete taskData.condaEnv;
-        }
-
-        // 处理调度选项
-        if (taskData.scheduleType === 'once' && taskData.scheduledDate && taskData.scheduledTime) {
-            // 一次性延迟执行
-            const scheduledDateTime = new Date(`${taskData.scheduledDate}T${taskData.scheduledTime}`);
-            const now = new Date();
-            const delaySeconds = Math.floor((scheduledDateTime - now) / 1000);
-
-            if (delaySeconds > 0) {
-                taskData.delay_seconds = delaySeconds;
-            }
-        } else if (taskData.scheduleType === 'cron' && taskData.cronExpression) {
-            // 直接使用cron表达式
-            taskData.cron_expression = taskData.cronExpression;
-        }
-
-        // 删除非API字段
-        delete taskData.scheduleType;
-        delete taskData.scheduledDate;
-        delete taskData.scheduledTime;
-        delete taskData.cronExpression;
-
-        // 使用taskService发送请求
-        const data = yield call(taskService.createTask, taskData);
+        // FormData对象已经在TaskForm组件中创建
+        // 直接使用taskService发送请求
+        const data = yield call(taskService.createTask, action.payload);
 
         // 处理响应
         if (data.success) {

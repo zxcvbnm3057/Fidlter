@@ -28,10 +28,12 @@ const MainLayout = () => {
             <div className="c-wrapper">
                 <div className="c-body">
                     <main className="c-main">
-                        <CContainer className="mt-4">
+                        <CContainer className="mt-4 mb-4">
                             <h1 className="mb-4">Fidlter 任务调度与环境管理系统</h1>
                             <Navigation />
                             <Outlet />
+                            {/* 添加额外的底部空间，确保表格能完整显示 */}
+                            <div className="pb-4"></div>
                         </CContainer>
                     </main>
                 </div>

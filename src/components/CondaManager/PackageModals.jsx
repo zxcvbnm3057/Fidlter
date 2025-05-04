@@ -6,7 +6,6 @@ import {
     CModalBody,
     CModalFooter,
     CButton,
-    CFormInput,
     CAlert
 } from '@coreui/react';
 
@@ -91,13 +90,12 @@ export const InstallPackagesModal = ({
             <CModalBody>
                 <div className="mb-3">
                     <label className="form-label">要安装的包列表 (每行一个包)</label>
-                    <CFormInput
-                        as="textarea"
+                    <textarea
+                        className={`form-control ${packageErrors.length > 0 ? 'is-invalid' : ''}`}
                         rows={5}
                         value={newPackages}
                         onChange={(e) => onNewPackagesChange(e.target.value)}
                         placeholder="numpy&#10;pandas==1.5.0&#10;tensorflow>=2.0"
-                        className={packageErrors.length > 0 ? 'is-invalid' : ''}
                     />
                     <small className="text-muted">每行只能输入一个包，可以指定版本，例如 numpy==1.20.0 或 pandas>=1.3.0</small>
 
