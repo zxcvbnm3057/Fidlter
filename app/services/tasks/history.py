@@ -228,7 +228,7 @@ class TaskHistory:
         """
         self.get_task_name = provider_func
 
-    def get_execution_logs(self, task_id, execution_id, include_stdout=True, include_stderr=True):
+    def get_execution_logs(self, task_id, execution_id):
         """获取特定执行记录的日志内容
         
         此方法专门用于实时日志查询，返回日志内容
@@ -236,33 +236,17 @@ class TaskHistory:
         参数:
             task_id: 任务ID
             execution_id: 执行ID
-            include_stdout: 是否包含标准输出
-            include_stderr: 是否包含标准错误
             
         返回:
-            字典，包含logs、stdout和stderr，如果找不到记录则返回None
+            字典，包含logs，如果找不到记录则返回None
         """
         with self.lock:
             if task_id in self.task_history:
                 for record in self.task_history[task_id]:
                     if record.get('execution_id') == execution_id:
-                        result = {}
-                        # 确保所有日志字段都存在
-                        for field in ['logs', 'stdout', 'stderr']:
-                            if field not in record:
-                                record[field] = ''
+                        # 确保logs字段存在
+                        if 'logs' not in record:
+                            record['logs'] = ''
 
-                        result['logs'] = record.get('logs', '')
-
-                        if include_stdout:
-                            result['stdout'] = record.get('stdout', '')
-                        else:
-                            result['stdout'] = ''
-
-                        if include_stderr:
-                            result['stderr'] = record.get('stderr', '')
-                        else:
-                            result['stderr'] = ''
-
-                        return result
+                        return {'logs': record.get('logs', '')}
         return None

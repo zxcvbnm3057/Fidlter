@@ -290,19 +290,16 @@ command: 启动命令（可选，默认为"python main.py"）
 - URL: `/api/tasks/<task_id>/executions/<execution_id>/logs`
 - 支持查询参数: 
   - `stream=true` (实时获取最新日志)
-  - `include_stdout=true` (包含标准输出，默认为true)
-  - `include_stderr=true` (包含标准错误，默认为true)
 
 **参数说明**:
 
 - `task_id`: 必填，任务的唯一标识ID
 - `execution_id`: 必填，执行的唯一标识ID
 - `stream`: 可选，布尔值，指示是否使用流式API获取实时日志，默认为false
-- `include_stdout`: 可选，布尔值，指示是否包含标准输出日志，默认为true
-- `include_stderr`: 可选，布尔值，指示是否包含标准错误日志，默认为true
 
 **响应**:
 
+当 `stream=false` 或未指定时:
 - 状态码: 200 (成功)
 - 内容:
   ```json
@@ -311,20 +308,25 @@ command: 启动命令（可选，默认为"python main.py"）
     "task_id": 1,
     "execution_id": "执行ID",
     "logs": "任务执行的详细日志内容...",
-    "stdout": "标准输出内容...",
-    "stderr": "标准错误内容...",
     "is_complete": false,         // 任务是否已完成
     "last_update": "2025-05-03 10:45:32"  // 日志最后更新时间
   }
   ```
 
-  如果是流式传输的JSON响应格式:
-  ```json
-  {"logs": "调用前的完整历史日志...", "stdout": "历史标准输出...", "stderr": "历史标准错误...", "is_complete": false}
-  {"logs": "新日志...", "stdout": "新标准输出...", "stderr": "新标准错误...", "is_complete": false}
-  {"logs": "新日志...", "stdout": "新标准输出...", "stderr": "新标准错误...", "is_complete": false}
-  {"logs": "新日志...", "stdout": "新标准输出...", "stderr": "新标准错误...", "is_complete": true}
-  ```
+当 `stream=true` 时:
+- 状态码: 200 (成功)
+- 内容类型: `text/event-stream`
+- 响应体: 使用Server-Sent Events格式的数据流
+
+每个事件的格式为:
+```
+data: {"logs": "新增日志内容", "is_complete": false}
+```
+
+当任务完成时，is_complete将为true:
+```
+data: {"logs": "新增日志内容", "is_complete": true}
+```
 
 - 状态码: 404 (任务或执行ID不存在)
 - 内容:
@@ -347,12 +349,13 @@ command: 启动命令（可选，默认为"python main.py"）
 
 **说明**:
 - 此接口用于获取特定任务执行的日志内容
-- 第一次调用时返回完整历史日志，不会丢失任何历史内容
-- 当使用 `stream=true` 参数时，采用流式返回，第一个响应包含完整历史记录，后续响应包含增量更新
-- 可以通过 `include_stdout` 和 `include_stderr` 参数控制是否包含标准输出和标准错误
-- 标准输出和标准错误分别存储在 `stdout` 和 `stderr` 字段中，而 `logs` 字段包含完整的组合日志
-- 对于正在运行的任务，前端也可以通过定期轮询此接口(设置`stream=false`或留空)来实现日志的实时更新
-- `is_complete` 字段指示任务是否已完成执行，可用于决定前端是否需要继续轮询获取更新
+- 当使用 `stream=false` 参数或不提供此参数时，接口将返回当前的完整日志内容
+- 当使用 `stream=true` 参数时，服务器将使用Server-Sent Events技术保持连接打开，持续发送新的日志内容：
+  - 第一次响应包含当前已有的完整日志
+  - 后续响应只包含增量日志(新产生的日志内容)
+  - 客户端无需轮询，服务器会自动推送新内容
+  - 当任务执行完成时，服务器会发送一个complete事件并关闭连接
+- `is_complete` 字段指示任务是否已完成执行
 - 系统将确保无论是流式传输还是轮询方式，日志都不会丢失，始终能获取完整的执行历史
 
 ## 手动触发任务

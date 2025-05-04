@@ -13,6 +13,7 @@ import {
     fetchTaskLogsSuccess,
     fetchTaskLogsFailure
 } from '../reducer';
+import store from '../../store';
 
 // 获取任务列表
 export function* fetchTasksSaga(action) {
@@ -66,27 +67,63 @@ export function* fetchTaskLogsSaga(action) {
             taskId,
             executionId,
             realTime,
-            pollInterval,
-            includeStdout = true,
-            includeStderr = true
+            pollInterval
         } = action.payload;
 
-        // 使用新的参数格式调用服务
+        // 如果请求使用实时模式且支持EventSource，使用流式API
+        if (realTime && typeof EventSource !== 'undefined') {
+            // 创建EventSource
+            const eventSource = taskService.createLogStream(
+                taskId,
+                executionId,
+                {
+                    onMessage: (data) => {
+                        // 接收到新日志数据时，分发action更新Redux状态
+                        if (data.logs) {
+                            const action = fetchTaskLogsSuccess({
+                                taskId,
+                                executionId,
+                                logs: data.logs,
+                                isComplete: data.isComplete || false
+                            });
+                            // 直接分发action而不是使用put (因为在回调中)
+                            action && store.dispatch(action);
+                        }
+                    },
+                    onComplete: (data) => {
+                        // 任务完成时，分发最终状态
+                        const action = fetchTaskLogsSuccess({
+                            taskId,
+                            executionId,
+                            logs: "",  // 完成事件不包含日志内容
+                            isComplete: true
+                        });
+                        action && store.dispatch(action);
+                    },
+                    onError: (error) => {
+                        // 出错时，分发错误action
+                        const action = fetchTaskLogsFailure(error.message || '流式日志连接失败');
+                        action && store.dispatch(action);
+                    }
+                }
+            );
+
+            // 返回一个不会resolve的Promise，因为EventSource会自己处理连接的生命周期
+            return yield new Promise(() => { });
+        }
+
+        // 如果不使用流式API或浏览器不支持EventSource，则使用传统轮询方式
         const options = {
-            stream: realTime,
-            includeStdout,
-            includeStderr
+            stream: false // 确保不使用stream模式
         };
 
         const data = yield call(taskService.getTaskExecutionLogs, taskId, executionId, options);
 
-        // 包含新增的stdout和stderr字段
+        // 将获取到的日志更新到Redux状态
         yield put(fetchTaskLogsSuccess({
             taskId,
             executionId,
             logs: data.logs,
-            stdout: data.stdout,
-            stderr: data.stderr,
             isComplete: data.is_complete
         }));
 

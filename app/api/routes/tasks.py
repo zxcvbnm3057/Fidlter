@@ -1,6 +1,8 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 from app.services import TaskScheduler, CondaManager
 from datetime import datetime
+import json
+import time
 
 # 创建实例
 task_scheduler = TaskScheduler()
@@ -225,13 +227,9 @@ def get_task_execution_logs(task_id, execution_id):
     
     支持查询参数:
     - stream=true (实时获取最新日志)
-    - include_stdout=true/false (是否包含标准输出，默认true)
-    - include_stderr=true/false (是否包含标准错误，默认true)
     """
     # 检查查询参数
     stream = request.args.get('stream', 'false').lower() == 'true'
-    include_stdout = request.args.get('include_stdout', 'true').lower() == 'true'
-    include_stderr = request.args.get('include_stderr', 'true').lower() == 'true'
 
     try:
         # 先获取任务状态以验证任务存在
@@ -251,23 +249,55 @@ def get_task_execution_logs(task_id, execution_id):
                 "message": f"Execution with ID {execution_id} not found for task {task_id}"
             }), 404
 
+        # 如果是流式请求，使用Server-Sent Events返回数据
+        if stream:
+
+            def generate():
+                # 初始化位置标记和状态
+                last_position = 0
+
+                # 发送当前已有的日志
+                current_record = task_scheduler.history.get_execution_record(task_id, execution_id)
+                if current_record:
+                    current_logs = current_record.get('logs', '')
+                    if current_logs:
+                        yield f"data: {json.dumps({'logs': current_logs, 'is_complete': False})}\n\n"
+                        last_position = len(current_logs)
+
+                # 如果任务仍在运行，持续发送新日志
+                while task_scheduler.executor.is_execution_running(task_id, execution_id):
+                    time.sleep(0.5)  # 短暂暂停避免过度占用CPU
+
+                    current_record = task_scheduler.history.get_execution_record(task_id, execution_id)
+                    if not current_record:
+                        break
+
+                    current_logs = current_record.get('logs', '')
+                    if len(current_logs) > last_position:
+                        new_content = current_logs[last_position:]
+                        yield f"data: {json.dumps({'logs': new_content, 'is_complete': False})}\n\n"
+                        last_position = len(current_logs)
+
+                # 任务完成时发送所有剩余日志和完成事件
+                final_record = task_scheduler.history.get_execution_record(task_id, execution_id)
+                if final_record:
+                    final_logs = final_record.get('logs', '')
+                    if len(final_logs) > last_position:
+                        new_content = final_logs[last_position:]
+                        yield f"data: {json.dumps({'logs': new_content, 'is_complete': True})}\n\n"
+
+            return Response(stream_with_context(generate()), content_type='text/event-stream')
+
+        # 非流式请求，返回普通JSON响应
         # 初始化日志内容
         logs = execution.get('logs', '')
-        stdout = execution.get('stdout', '')
-        stderr = execution.get('stderr', '')
 
         # 处理实时日志请求 - 获取最新日志内容
-        if stream or task.get('status') == 'running':
+        if task.get('status') == 'running':
             # 从历史记录管理器中获取最新日志
-            latest_logs = task_scheduler.history.get_execution_logs(task_id,
-                                                                    execution_id,
-                                                                    include_stdout=include_stdout,
-                                                                    include_stderr=include_stderr)
-
+            latest_logs = task_scheduler.history.get_execution_record(task_id, execution_id)
             if latest_logs:
                 logs = latest_logs.get('logs', logs)
-                stdout = latest_logs.get('stdout', stdout)
-                stderr = latest_logs.get('stderr', stderr)
 
         # 检查任务是否已完成
         is_complete = execution.get('status') in ['completed', 'failed', 'stopped']
@@ -284,12 +314,6 @@ def get_task_execution_logs(task_id, execution_id):
             "is_complete": is_complete,
             "last_update": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
-
-        # 根据参数添加stdout和stderr
-        if include_stdout:
-            response_data["stdout"] = stdout
-        if include_stderr:
-            response_data["stderr"] = stderr
 
         # 返回日志信息
         return jsonify(response_data)

@@ -67,10 +67,10 @@ class TaskExecutor:
             # 创建命令 - 如果任务有自定义命令则使用，否则使用默认命令
             if task.get('command'):
                 # 使用自定义命令
-                command = f"conda run -n {task['conda_env']} {task['command']}"
+                command = f"conda run --no-capture-output -n {task['conda_env']} {task['command']}"
             else:
                 # 使用默认命令
-                command = f"conda run -n {task['conda_env']} python {task['script_path']}"
+                command = f"conda run --no-capture-output -n {task['conda_env']} python {task['script_path']}"
 
             # 记录使用的命令到日志
             self.history.append_to_execution_log(
@@ -80,13 +80,15 @@ class TaskExecutor:
             # 设置工作目录为脚本所在目录
             working_dir = os.path.dirname(task['script_path'])
 
-            # 启动进程
-            process = subprocess.Popen(command,
-                                       shell=True,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.STDOUT,
-                                       text=True,
-                                       cwd=working_dir)
+            # 启动进程，设置stdout和stderr为管道
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,  # 行缓冲模式
+                cwd=working_dir)
 
             # 存储进程PID，便于发送信号
             task['process_pid'] = process.pid
@@ -97,15 +99,17 @@ class TaskExecutor:
             memory_monitor_thread.daemon = True
             memory_monitor_thread.start()
 
-            # 读取并记录输出
-            for line in process.stdout:
-                # 检查暂停事件，如果被暂停则阻塞在这里
-                self.pause_events[task_id].wait()
-
-                self.history.append_to_execution_log(task_id, execution_id, line)
+            # 创建单独的线程实时读取并记录输出
+            output_reader_thread = threading.Thread(target=self._read_process_output,
+                                                    args=(process, task_id, execution_id))
+            output_reader_thread.daemon = True
+            output_reader_thread.start()
 
             # 等待进程完成
             exit_code = process.wait()
+
+            # 确保输出读取线程完成
+            output_reader_thread.join(timeout=2.0)
 
             # 更新执行记录
             end_time = datetime.now()
@@ -170,6 +174,34 @@ class TaskExecutor:
                 # 出现异常时也清理暂停事件
                 if task_id in self.pause_events:
                     del self.pause_events[task_id]
+
+    def _read_process_output(self, process, task_id, execution_id):
+        """在单独的线程中实时读取和处理进程输出
+        
+        参数:
+            process: 正在运行的子进程对象
+            task_id: 任务ID
+            execution_id: 执行ID
+        """
+        try:
+            # 按行读取stdout内容
+            for line in iter(process.stdout.readline, ''):
+                if line:  # 确保不是空行
+                    self.history.append_to_execution_log(task_id, execution_id, line)
+
+            # 确保读取了所有剩余输出，即使进程已退出
+            remaining_output = process.stdout.read()
+            if remaining_output:
+                self.history.append_to_execution_log(task_id, execution_id, remaining_output)
+
+        except Exception as e:
+            self.logger.error(f"Error reading process output for task {task_id}: {str(e)}")
+            self.history.append_to_execution_log(task_id, execution_id, f"\nError reading output: {str(e)}\n")
+
+        finally:
+            # 确保流关闭，避免资源泄漏
+            if process.stdout:
+                process.stdout.close()
 
     def _monitor_process_memory(self, pid, task, execution_id):
         """监控进程的内存使用情况，如果设置了内存限制且超限则终止进程"""
@@ -593,3 +625,21 @@ class TaskExecutor:
 
             # 检查暂停事件的状态，如果是被清除状态（not set）则表示任务已暂停
             return not self.pause_events[task_id].is_set()
+
+    def is_execution_running(self, task_id, execution_id):
+        """检查指定的执行是否仍在运行
+        
+        参数:
+            task_id: 任务ID
+            execution_id: 执行ID
+            
+        返回:
+            布尔值，表示执行是否仍在运行
+        """
+        # 获取执行记录
+        execution_record = self.history.get_execution_record(task_id, execution_id)
+        if not execution_record:
+            return False
+
+        # 检查执行状态是否为运行中或暂停
+        return execution_record.get('status') in ['running', 'paused']

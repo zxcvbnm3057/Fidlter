@@ -38,8 +38,11 @@ import {
     stopTaskRequest,
     fetchTasksRequest,
     fetchTaskLogsRequest,
+    fetchTaskLogsSuccess,
+    fetchTaskLogsFailure,
     clearTaskLogs
 } from '../redux/tasks/reducer';
+import { taskService } from '../services';
 import { CChart } from '@coreui/react-chartjs';
 import GitTaskUpdate from '../components/TaskScheduler/GitTaskUpdate';
 import TaskScriptUpdater from '../components/TaskScheduler/TaskScriptUpdater';
@@ -56,6 +59,8 @@ const TaskDetail = () => {
     const logContainerRef = useRef(null);
     const [activeTab, setActiveTab] = useState(1); // 添加标签页状态
     const [activeLogTab, setActiveLogTab] = useState('combined'); // 添加日志标签页切换状态
+    const [logEventSource, setLogEventSource] = useState(null); // 存储日志流EventSource实例
+    const [logAlreadyOpened, setLogAlreadyOpened] = useState(false); // 添加状态来追踪日志是否已打开
 
     // 检查URL参数是否要求显示日志
     useEffect(() => {
@@ -63,7 +68,8 @@ const TaskDetail = () => {
         const showLogs = searchParams.get('showLogs') === 'true';
         const executionId = searchParams.get('executionId');
 
-        if (showLogs && currentTaskDetails) {
+        if (showLogs && currentTaskDetails && !logAlreadyOpened) {
+            setLogAlreadyOpened(true);
             if (executionId) {
                 // 如果URL提供了执行ID，则直接打开该执行ID的日志
                 openLogModal(executionId);
@@ -72,7 +78,7 @@ const TaskDetail = () => {
                 openLogModal(currentTaskDetails.task.last_execution_id);
             }
         }
-    }, [location.search, currentTaskDetails]);
+    }, [location.search, currentTaskDetails, logAlreadyOpened]);
 
     // 脚本更新成功后的回调
     const handleScriptUpdateSuccess = (result) => {
@@ -122,18 +128,67 @@ const TaskDetail = () => {
         setActiveExecutionId(executionId);
         setLogModalVisible(true);
 
-        // 获取日志，设置轮询间隔为3秒
-        dispatch(fetchTaskLogsRequest({
-            taskId: parseInt(taskId),
-            executionId,
-            realTime: true,
-            pollInterval: 3000
-        }));
+        // 检查浏览器是否支持EventSource
+        const supportsEventSource = 'EventSource' in window;
+
+        if (supportsEventSource) {
+            // 使用流式API创建EventSource实例
+            const eventSource = taskService.createLogStream(
+                parseInt(taskId),
+                executionId,
+                {
+                    onMessage: (data) => {
+                        // 接收到新日志数据时，分发action更新Redux状态
+                        if (data.logs) {
+                            dispatch(fetchTaskLogsSuccess({
+                                taskId,
+                                executionId,
+                                logs: data.logs,
+                                isComplete: data.isComplete || false
+                            }));
+                        }
+                    },
+                    onComplete: (data) => {
+                        // 任务完成时，分发最终状态
+                        dispatch(fetchTaskLogsSuccess({
+                            taskId,
+                            executionId,
+                            logs: "",  // 完成事件不包含日志内容
+                            isComplete: true
+                        }));
+                    },
+                    onError: (error) => {
+                        // 出错时，分发错误action
+                        dispatch(fetchTaskLogsFailure(error.message || '流式日志连接失败'));
+                    }
+                }
+            );
+
+            // 存储EventSource实例以便后续关闭
+            setLogEventSource(eventSource);
+        } else {
+            // 不支持EventSource时使用轮询
+            dispatch(fetchTaskLogsRequest({
+                taskId: parseInt(taskId),
+                executionId,
+                realTime: true,
+                pollInterval: 3000
+            }));
+        }
     };
 
     // 关闭日志模态框并清理日志
     const closeLogModal = () => {
+        // 关闭模态框
         setLogModalVisible(false);
+
+        // 关闭EventSource连接
+        if (logEventSource) {
+            logEventSource.close();
+            setLogEventSource(null);
+        }
+
+        // 清理日志数据
         if (activeExecutionId) {
             dispatch(clearTaskLogs({ taskId: parseInt(taskId), executionId: activeExecutionId }));
             setActiveExecutionId(null);
@@ -145,8 +200,6 @@ const TaskDetail = () => {
         if (!taskId || !activeExecutionId || !taskLogs[taskId]) {
             return {
                 logs: "等待日志数据...",
-                stdout: "",
-                stderr: "",
                 isComplete: false
             };
         }
@@ -155,8 +208,6 @@ const TaskDetail = () => {
         if (!executionLogs) {
             return {
                 logs: "获取日志中...",
-                stdout: "",
-                stderr: "",
                 isComplete: false
             };
         }
@@ -238,7 +289,7 @@ const TaskDetail = () => {
     // 获取所有日志内容
     const task = currentTaskDetails?.task;
     const executionHistory = currentTaskDetails?.execution_history || [];
-    const { logs, stdout, stderr, isComplete } = getCurrentLogs();
+    const { logs, isComplete } = getCurrentLogs();
     const performanceChartData = preparePerformanceChartData();
     const memoryChartData = prepareMemoryChartData();
 
@@ -585,84 +636,20 @@ const TaskDetail = () => {
                         )}
                     </div>
 
-                    {/* 日志类型切换标签 */}
-                    <CNav variant="tabs" className="mb-2">
-                        <CNavItem>
-                            <CNavLink
-                                active={activeLogTab === 'combined'}
-                                onClick={() => setActiveLogTab('combined')}
-                                style={{ cursor: 'pointer' }}
-                            >
-                                综合日志
-                            </CNavLink>
-                        </CNavItem>
-                        <CNavItem>
-                            <CNavLink
-                                active={activeLogTab === 'stdout'}
-                                onClick={() => setActiveLogTab('stdout')}
-                                style={{ cursor: 'pointer' }}
-                            >
-                                标准输出
-                            </CNavLink>
-                        </CNavItem>
-                        <CNavItem>
-                            <CNavLink
-                                active={activeLogTab === 'stderr'}
-                                onClick={() => setActiveLogTab('stderr')}
-                                style={{ cursor: 'pointer' }}
-                            >
-                                标准错误
-                            </CNavLink>
-                        </CNavItem>
-                    </CNav>
-
-                    {/* 日志内容展示 */}
-                    <CTabContent>
-                        <CTabPane visible={activeLogTab === 'combined'}>
-                            <div
-                                ref={logContainerRef}
-                                className="bg-dark text-white p-3 mt-2"
-                                style={{
-                                    height: '500px',
-                                    overflowY: 'auto',
-                                    fontFamily: 'monospace',
-                                    whiteSpace: 'pre-wrap',
-                                    fontSize: '12px'
-                                }}
-                            >
-                                {logs || "等待日志数据..."}
-                            </div>
-                        </CTabPane>
-                        <CTabPane visible={activeLogTab === 'stdout'}>
-                            <div
-                                className="bg-dark text-white p-3 mt-2"
-                                style={{
-                                    height: '500px',
-                                    overflowY: 'auto',
-                                    fontFamily: 'monospace',
-                                    whiteSpace: 'pre-wrap',
-                                    fontSize: '12px'
-                                }}
-                            >
-                                {stdout || "暂无标准输出..."}
-                            </div>
-                        </CTabPane>
-                        <CTabPane visible={activeLogTab === 'stderr'}>
-                            <div
-                                className="bg-dark text-white p-3 mt-2"
-                                style={{
-                                    height: '500px',
-                                    overflowY: 'auto',
-                                    fontFamily: 'monospace',
-                                    whiteSpace: 'pre-wrap',
-                                    fontSize: '12px',
-                                    color: '#ff8080' /* 标准错误用红色调显示 */
-                                }}
-                            >
-                                {stderr || "暂无标准错误..."}
-                            </div>
-                        </CTabPane>
-                    </CTabContent>
+                    {/* 日志内容展示 - 移除标签页，直接显示综合日志 */}
+                    <div
+                        ref={logContainerRef}
+                        className="bg-dark text-white p-3 mt-2"
+                        style={{
+                            height: '500px',
+                            overflowY: 'auto',
+                            fontFamily: 'monospace',
+                            whiteSpace: 'pre-wrap',
+                            fontSize: '12px'
+                        }}
+                    >
+                        {logs || "等待日志数据..."}
+                    </div>
                 </CModalBody>
                 <CModalFooter>
                     <CButton color="secondary" onClick={closeLogModal}>

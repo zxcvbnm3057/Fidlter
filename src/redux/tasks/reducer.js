@@ -187,18 +187,35 @@ const tasksSlice = createSlice({
         },
         // 获取任务执行日志成功
         fetchTaskLogsSuccess: (state, action) => {
-            const { taskId, executionId, logs, stdout, stderr, isComplete } = action.payload;
+            const { taskId, executionId, logs, isComplete } = action.payload;
             // 使用嵌套结构存储日志
             if (!state.taskLogs[taskId]) {
                 state.taskLogs[taskId] = {};
             }
-            state.taskLogs[taskId][executionId] = {
-                logs,
-                stdout,
-                stderr,
-                isComplete,
-                lastUpdated: new Date().toISOString()
-            };
+
+            // 如果是第一次接收日志，直接设置
+            if (!state.taskLogs[taskId][executionId]) {
+                state.taskLogs[taskId][executionId] = {
+                    logs: logs || "",
+                    isComplete: isComplete || false,
+                    lastUpdated: new Date().toISOString()
+                };
+            } else if (isComplete) {
+                // 如果收到完成信号，更新完成状态但不替换日志内容
+                state.taskLogs[taskId][executionId] = {
+                    ...state.taskLogs[taskId][executionId],
+                    isComplete: true,
+                    lastUpdated: new Date().toISOString()
+                };
+            } else if (logs) {
+                // 如果已有日志且收到新内容，则追加新的日志内容
+                const existingLogs = state.taskLogs[taskId][executionId];
+                state.taskLogs[taskId][executionId] = {
+                    logs: logs ? existingLogs.logs + logs : existingLogs.logs,
+                    isComplete: isComplete || existingLogs.isComplete,
+                    lastUpdated: new Date().toISOString()
+                };
+            }
         },
         // 获取任务执行日志失败
         fetchTaskLogsFailure: (state, action) => {
