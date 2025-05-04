@@ -38,9 +38,9 @@ const TaskHistory = () => {
         if (filterValue === 'all') {
             setFilteredHistory(taskHistory);
         } else if (filterValue === 'abnormal') {
-            // 筛选异常任务（非成功、非失败状态）
+            // 筛选异常任务（非成功、非失败、非运行中状态）
             setFilteredHistory(taskHistory.filter(task =>
-                task.status !== 'success' && task.status !== 'failed'
+                task.status !== 'success' && task.status !== 'failed' && task.status !== 'running'
             ));
         } else {
             setFilteredHistory(taskHistory.filter(task => task.status === filterValue));

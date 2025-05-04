@@ -244,7 +244,7 @@ const TaskStatistics = ({ taskList, taskStats, error, onFilterChange, currentFil
                     <StatCard
                         value={runningTasksCount}
                         label="运行中任务"
-                        color="success"
+                        color="primary"
                         warning={isDataIncomplete(taskList) ? "数据不完整" : null}
                         warningText={isDataIncomplete(taskList) ? "无法获取运行中任务数据" : null}
                         onClick={() => handleCardClick('running')}

@@ -34,7 +34,7 @@ const STATUS_PRIORITY = {
 const STATUS_OPTIONS = [
     { value: 'all', label: '所有状态' },
     { value: 'running', label: '运行中' },
-    { value: 'scheduled', label: '已调度' },
+    { value: 'scheduled', label: '已计划' },
     { value: 'completed', label: '已完成' },
     { value: 'failed', label: '失败' },
     { value: 'paused', label: '已暂停' },
@@ -114,7 +114,7 @@ const TaskList = ({
             case 'failed':
                 return <CBadge color="danger">失败</CBadge>;
             case 'scheduled':
-                return <CBadge color="warning">已调度</CBadge>;
+                return <CBadge color="warning">已计划</CBadge>;
             case 'paused':
                 return <CBadge color="info">已暂停</CBadge>;
             case 'stopped':
@@ -135,7 +135,7 @@ const TaskList = ({
             case 'failed':
                 return '失败';
             case 'scheduled':
-                return '已调度';
+                return '已计划';
             case 'paused':
                 return '已暂停';
             case 'stopped':
