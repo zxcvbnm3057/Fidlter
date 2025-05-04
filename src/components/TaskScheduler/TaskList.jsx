@@ -46,6 +46,7 @@ const TaskList = ({
     onStopTask,
     onPauseTask,
     onResumeTask,
+    onTriggerTask,
     initialFilterStatus = 'all',
     onFilterChange
 }) => {
@@ -72,8 +73,8 @@ const TaskList = ({
     };
 
     // 跳转到任务详情页
-    const goToTaskDetail = (taskId) => {
-        navigate(`/task-detail/${taskId}`);
+    const goToTaskDetail = (taskId, showLogs = false) => {
+        navigate(`/task-detail/${taskId}${showLogs ? '?showLogs=true' : ''}`);
     };
 
     // 处理排序
@@ -147,46 +148,91 @@ const TaskList = ({
     // 获取操作按钮
     const getActionButtons = (task) => (
         <div className="d-flex">
-            {task.status === 'running' && (
-                <CTooltip content="停止任务">
-                    <CButton color="danger" size="sm" className="me-1" onClick={(e) => {
-                        e.stopPropagation();
-                        onStopTask(task.task_id);
-                    }}>
-                        <CIcon icon={cilMediaStop} />
-                    </CButton>
-                </CTooltip>
-            )}
-
-            {task.status === 'scheduled' && (
-                <CTooltip content="暂停任务">
-                    <CButton color="info" size="sm" className="me-1" onClick={(e) => {
-                        e.stopPropagation();
-                        onPauseTask(task.task_id);
-                    }}>
-                        <CIcon icon={cilMediaPause} />
-                    </CButton>
-                </CTooltip>
-            )}
-
-            {task.status === 'paused' && (
-                <CTooltip content="恢复任务">
-                    <CButton color="success" size="sm" className="me-1" onClick={(e) => {
-                        e.stopPropagation();
-                        onResumeTask(task.task_id);
-                    }}>
+            {/* 手动触发按钮 - 对不可触发的任务禁用 */}
+            <CTooltip content="手动触发任务">
+                <span className="d-inline-block me-1">
+                    <CButton
+                        color="success"
+                        size="sm"
+                        disabled={task.status === 'running' || !onTriggerTask}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (typeof onTriggerTask === 'function') {
+                                onTriggerTask(task.task_id);
+                            } else {
+                                console.error('onTriggerTask is not a function');
+                                alert('触发任务功能暂时不可用，请刷新页面重试');
+                            }
+                        }}
+                    >
                         <CIcon icon={cilMediaPlay} />
                     </CButton>
-                </CTooltip>
-            )}
+                </span>
+            </CTooltip>
 
-            {/* 移除了禁用任务按钮 */}
+            {/* 暂停按钮 - 仅在任务运行时可用，其他状态显示但禁用 */}
+            <CTooltip content="暂停任务">
+                <span className="d-inline-block me-1">
+                    <CButton
+                        color="info"
+                        size="sm"
+                        disabled={task.status !== 'running'}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onPauseTask(task.task_id);
+                        }}
+                        style={{ display: task.status === 'paused' ? 'none' : 'inline-block' }}
+                    >
+                        <CIcon icon={cilMediaPause} />
+                    </CButton>
+                </span>
+            </CTooltip>
 
+            {/* 继续按钮 - 仅在任务暂停时可用，其他状态显示但禁用 */}
+            <CTooltip content="继续任务">
+                <span className="d-inline-block me-1">
+                    <CButton
+                        color="info"
+                        size="sm"
+                        disabled={task.status !== 'paused'}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onResumeTask(task.task_id);
+                        }}
+                        style={{ display: task.status !== 'paused' ? 'none' : 'inline-block' }}
+                    >
+                        <CIcon icon={cilMediaPlay} />
+                    </CButton>
+                </span>
+            </CTooltip>
+
+            {/* 停止按钮 - 对已停止的任务禁用 */}
+            <CTooltip content="停止任务">
+                <span className="d-inline-block me-1">
+                    <CButton
+                        color="danger"
+                        size="sm"
+                        disabled={task.status === 'stopped' || task.status === 'completed' || task.status === 'failed'}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onStopTask(task.task_id);
+                        }}
+                    >
+                        <CIcon icon={cilMediaStop} />
+                    </CButton>
+                </span>
+            </CTooltip>
+
+            {/* 详情按钮 - 始终可用 */}
             <CTooltip content="查看详情">
-                <CButton color="secondary" size="sm" onClick={(e) => {
-                    e.stopPropagation();
-                    goToTaskDetail(task.task_id);
-                }}>
+                <CButton
+                    color="secondary"
+                    size="sm"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        goToTaskDetail(task.task_id);
+                    }}
+                >
                     <CIcon icon={cilList} />
                 </CButton>
             </CTooltip>
@@ -365,7 +411,7 @@ const TaskList = ({
                     sortDirection={sortDirection}
                     onSort={handleSort}
                     onRowClick={handleRowClick}
-                    rowClassName="cursor-pointer hover-highlight"
+                    rowClassName={() => "cursor-pointer hover-highlight"}
                     emptyText={
                         <EmptyState
                             icon="📋"

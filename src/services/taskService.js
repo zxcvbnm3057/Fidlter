@@ -44,11 +44,34 @@ export const taskService = {
         return response.data;
     },
 
+    // 手动触发任务
+    triggerTask: async (taskId) => {
+        const response = await axios.post(`/api/tasks/${taskId}/trigger`);
+        return response.data;
+    },
+
     // 获取任务执行日志
-    getTaskExecutionLogs: async (taskId, executionId, realTime = false) => {
-        const response = await axios.get(
-            `/api/tasks/${taskId}/executions/${executionId}/logs?real_time=${realTime}`
-        );
+    getTaskExecutionLogs: async (taskId, executionId, options = {}) => {
+        const { stream = false, includeStdout = true, includeStderr = true } = options;
+        const url = `/api/tasks/${taskId}/executions/${executionId}/logs`;
+        const params = new URLSearchParams();
+
+        if (stream) {
+            params.append('stream', 'true');
+        }
+
+        if (!includeStdout) {
+            params.append('include_stdout', 'false');
+        }
+
+        if (!includeStderr) {
+            params.append('include_stderr', 'false');
+        }
+
+        const queryString = params.toString();
+        const finalUrl = queryString ? `${url}?${queryString}` : url;
+
+        const response = await axios.get(finalUrl);
         return response.data;
     },
 

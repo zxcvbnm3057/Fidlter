@@ -10,7 +10,8 @@ import {
     fetchTaskDetailsRequest,
     fetchTaskLogsRequest,
     deleteTaskRequest,
-    updateTaskRequest
+    updateTaskRequest,
+    triggerTaskRequest
 } from './reducer';
 import {
     createTaskSaga,
@@ -18,7 +19,8 @@ import {
     pauseTaskSaga,
     resumeTaskSaga,
     deleteTaskSaga,
-    updateTaskSaga
+    updateTaskSaga,
+    triggerTaskSaga
 } from './sagas/taskOperations';
 import {
     fetchTasksSaga,
@@ -32,6 +34,7 @@ export default function* tasksSaga() {
     yield all([
         takeLatest(fetchTasksRequest.type, fetchTasksSaga),
         takeLatest(createTaskRequest.type, createTaskSaga),
+        takeLatest(triggerTaskRequest.type, triggerTaskSaga),
         takeLatest(stopTaskRequest.type, stopTaskSaga),
         takeLatest(pauseTaskRequest.type, pauseTaskSaga),
         takeLatest(resumeTaskRequest.type, resumeTaskSaga),

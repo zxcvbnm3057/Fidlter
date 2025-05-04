@@ -244,76 +244,104 @@ class TaskExecutor:
         返回:
             包含操作结果的字典
         """
+        # 首先不持有锁的情况下获取任务，避免长时间持有锁
+        task = None
+        task_status = None
+        process_pid = None
+        last_execution_id = None
+
         with self.lock:
-            # 此函数应该由外部提供task对象
             task = self._get_task(task_id)
             if not task:
                 return {"success": False, "message": f"Task with ID {task_id} not found"}
 
-            # 检查任务状态
-            if task['status'] != 'running':
-                return {
-                    "success": False,
-                    "message": "Task is not in a running state",
-                    "error": f"Cannot stop a task with status: '{task['status']}'",
-                    "current_status": task['status']
-                }
+            # 记录我们需要的信息，然后尽快释放锁
+            task_status = task.get('status')
+            process_pid = task.get('process_pid')
+            last_execution_id = task.get('last_execution_id')
 
-            previous_status = task['status']
-
-            # 如果任务正在运行，尝试终止它
-            if task.get('last_execution_id'):
-                # 查找最近一次执行的记录
-                execution_id = task.get('last_execution_id')
-                record = self.history.get_execution_record(task_id, execution_id)
-
-                if record and record.get('status') == 'running':
-                    try:
-                        # 更新执行记录和任务状态
-                        task['status'] = 'stopped'
-
-                        updates = {
-                            'status': 'stopped',
-                            'end_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                            'logs': record['logs'] + "\nTask was stopped manually."
-                        }
-                        self.history.update_execution_record(task_id, execution_id, updates)
-
-                        # 尝试终止相关进程
-                        command = f"conda run -n {task['conda_env']} python {task['script_path']}"
-                        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                            if proc.info['cmdline'] and command in ' '.join(proc.info['cmdline']):
-                                try:
-                                    proc.terminate()  # 发送终止信号
-                                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                    pass
-
-                        return {
-                            "success": True,
-                            "message": "Task stopped successfully",
-                            "task": {
-                                "task_id": task_id,
-                                "task_name": task.get('task_name'),
-                                "status": 'stopped',
-                                "previous_status": previous_status
-                            }
-                        }
-                    except Exception as e:
-                        return {"success": False, "message": f"Failed to stop task: {str(e)}", "error": str(e)}
-
-            # 如果没有找到对应的执行记录，但任务状态是running
-            # 仍然更新任务状态为stopped
-            task['status'] = 'stopped'
+        # 检查任务状态
+        if task_status != 'running':
             return {
-                "success": True,
-                "message": "Task marked as stopped",
-                "task": {
-                    "task_id": task_id,
-                    "task_name": task.get('task_name'),
-                    "status": 'stopped',
-                    "previous_status": previous_status
-                }
+                "success": False,
+                "message": "Task is not in a running state",
+                "error": f"Cannot stop a task with status: '{task_status}'",
+                "current_status": task_status
             }
+
+        # 如果任务正在运行，尝试终止它
+        result = {"success": False, "message": "Failed to stop task"}
+
+        if process_pid:
+            try:
+                # 尝试获取进程
+                process = psutil.Process(process_pid)
+
+                # 获取所有子进程
+                child_processes = self._get_child_processes(process_pid)
+
+                # 先终止子进程
+                for pid in child_processes:
+                    try:
+                        child_process = psutil.Process(pid)
+                        child_process.terminate()
+                        self.logger.info(f"Terminated child process {pid}")
+                    except (ProcessLookupError, psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                        self.logger.warning(f"Failed to terminate child process {pid}: {str(e)}")
+
+                # 终止主进程
+                process.terminate()
+                self.logger.info(f"Terminated main process {process_pid}")
+
+                # 更新状态 - 现在再获取锁
+                with self.lock:
+                    task = self._get_task(task_id)
+                    if task:  # 再次检查任务是否存在
+                        task['status'] = 'stopped'
+                        if 'process_pid' in task:
+                            del task['process_pid']
+
+                # 更新执行记录
+                if last_execution_id:
+                    record = self.history.get_execution_record(task_id, last_execution_id)
+                    if record:
+                        updates = {
+                            'status':
+                            'stopped',
+                            'end_time':
+                            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'duration': (datetime.now() -
+                                         datetime.strptime(record['start_time'], '%Y-%m-%d %H:%M:%S')).total_seconds(),
+                            'logs':
+                            record['logs'] + "\nTask was manually stopped"
+                        }
+                        self.history.update_execution_record(task_id, last_execution_id, updates)
+
+                result = {"success": True, "message": "Task stopped successfully"}
+
+            except (ProcessLookupError, psutil.NoSuchProcess) as e:
+                self.logger.warning(f"Process {process_pid} not found: {str(e)}")
+
+                # 进程已不存在，更新任务状态
+                with self.lock:
+                    task = self._get_task(task_id)
+                    if task:
+                        task['status'] = 'stopped'
+                        if 'process_pid' in task:
+                            del task['process_pid']
+
+                result = {"success": True, "message": "Process was already terminated, task status updated"}
+
+            except Exception as e:
+                self.logger.error(f"Error stopping task {task_id}: {str(e)}")
+                result = {"success": False, "message": f"Error stopping task: {str(e)}"}
+
+        # 清理暂停事件
+        if task_id in self.pause_events:
+            self.pause_events[task_id].set()  # 确保没有被阻塞的线程
+            del self.pause_events[task_id]
+
+        return result
 
     def set_task_provider(self, provider_func):
         """设置任务提供函数，用于获取任务对象
@@ -332,6 +360,12 @@ class TaskExecutor:
         返回:
             包含操作结果的字典
         """
+        # 首先在锁内获取需要的信息，然后尽快释放锁
+        task = None
+        process_pid = None
+        previous_status = None
+        execution_id = None
+
         with self.lock:
             # 获取任务对象
             task = self._get_task(task_id)
@@ -363,62 +397,63 @@ class TaskExecutor:
                     "error": "Cannot pause task: process PID not found"
                 }
 
+            # 记录我们需要的信息
+            process_pid = task['process_pid']
             previous_status = task['status']
+            execution_id = task.get('last_execution_id')
 
             # 更新任务状态
             task['status'] = 'paused'
 
-            # 暂停任务线程
+            # 暂停任务线程 - 必须在锁内完成，因为涉及到共享的事件对象
             self.pause_events[task_id].clear()  # 清除事件，阻塞线程
 
-            # 使用系统信号真正暂停子进程
-            try:
-                process_pid = task['process_pid']
-                child_processes = self._get_child_processes(process_pid)
+        # 锁外执行可能耗时的系统调用
+        try:
+            # 获取所有子进程 - 在锁外执行
+            child_processes = self._get_child_processes(process_pid)
 
-                # 暂停所有子进程和主进程
-                for pid in child_processes:
-                    try:
-                        os.kill(pid, signal.SIGSTOP)
-                        self.logger.info(f"Sent SIGSTOP to child process {pid}")
-                    except (ProcessLookupError, PermissionError) as e:
-                        self.logger.warning(f"Failed to send SIGSTOP to child process {pid}: {str(e)}")
-
-                # 暂停主进程
+            # 暂停所有子进程和主进程
+            for pid in child_processes:
                 try:
-                    os.kill(process_pid, signal.SIGSTOP)
-                    self.logger.info(f"Sent SIGSTOP to main process {process_pid}")
+                    os.kill(pid, signal.SIGSTOP)
+                    self.logger.info(f"Sent SIGSTOP to child process {pid}")
                 except (ProcessLookupError, PermissionError) as e:
-                    self.logger.warning(f"Failed to send SIGSTOP to main process {process_pid}: {str(e)}")
+                    self.logger.warning(f"Failed to send SIGSTOP to child process {pid}: {str(e)}")
 
-            except Exception as e:
-                self.logger.error(f"Error pausing process: {str(e)}")
-                # 即使进程暂停失败，我们也保持任务状态为paused，因为线程已经被暂停
+            # 暂停主进程
+            try:
+                os.kill(process_pid, signal.SIGSTOP)
+                self.logger.info(f"Sent SIGSTOP to main process {process_pid}")
+            except (ProcessLookupError, PermissionError) as e:
+                self.logger.warning(f"Failed to send SIGSTOP to main process {process_pid}: {str(e)}")
 
-            # 更新执行记录
-            if task.get('last_execution_id'):
-                execution_id = task.get('last_execution_id')
-                record = self.history.get_execution_record(task_id, execution_id)
+        except Exception as e:
+            self.logger.error(f"Error pausing process: {str(e)}")
+            # 即使进程暂停失败，我们也保持任务状态为paused，因为线程已经被暂停
 
-                if record:
-                    updates = {
-                        'status': 'paused',
-                        'logs': record['logs'] + "\nTask was paused manually. Process execution suspended."
-                    }
-                    self.history.update_execution_record(task_id, execution_id, updates)
-
-            self.logger.info(f"Task {task_id} paused successfully")
-
-            return {
-                "success": True,
-                "message": "Task paused successfully",
-                "task": {
-                    "task_id": task_id,
-                    "task_name": task.get('task_name'),
-                    "status": 'paused',
-                    "previous_status": previous_status
+        # 更新执行记录 - 锁外执行
+        if execution_id:
+            record = self.history.get_execution_record(task_id, execution_id)
+            if record:
+                updates = {
+                    'status': 'paused',
+                    'logs': record['logs'] + "\nTask was paused manually. Process execution suspended."
                 }
+                self.history.update_execution_record(task_id, execution_id, updates)
+
+        self.logger.info(f"Task {task_id} paused successfully")
+
+        return {
+            "success": True,
+            "message": "Task paused successfully",
+            "task": {
+                "task_id": task_id,
+                "task_name": task.get('task_name') if task else None,
+                "status": 'paused',
+                "previous_status": previous_status
             }
+        }
 
     def resume_task(self, task_id):
         """恢复已暂停的任务，使用系统信号真正恢复进程执行
@@ -429,6 +464,12 @@ class TaskExecutor:
         返回:
             包含操作结果的字典
         """
+        # 首先在锁内获取需要的信息，然后尽快释放锁
+        task = None
+        process_pid = None
+        previous_status = None
+        execution_id = None
+
         with self.lock:
             # 获取任务对象
             task = self._get_task(task_id)
@@ -460,62 +501,65 @@ class TaskExecutor:
                     "error": "Cannot resume task: process PID not found"
                 }
 
+            # 记录我们需要的信息
+            process_pid = task['process_pid']
             previous_status = task['status']
+            execution_id = task.get('last_execution_id')
 
             # 更新任务状态
             task['status'] = 'running'
 
-            # 使用系统信号恢复子进程
-            try:
-                process_pid = task['process_pid']
-                child_processes = self._get_child_processes(process_pid)
+        # 锁外执行可能耗时的系统调用
+        try:
+            # 获取所有子进程 - 在锁外执行
+            child_processes = self._get_child_processes(process_pid)
 
-                # 恢复所有子进程
-                for pid in child_processes:
-                    try:
-                        os.kill(pid, signal.SIGCONT)
-                        self.logger.info(f"Sent SIGCONT to child process {pid}")
-                    except (ProcessLookupError, PermissionError) as e:
-                        self.logger.warning(f"Failed to send SIGCONT to child process {pid}: {str(e)}")
-
-                # 恢复主进程
+            # 恢复所有子进程
+            for pid in child_processes:
                 try:
-                    os.kill(process_pid, signal.SIGCONT)
-                    self.logger.info(f"Sent SIGCONT to main process {process_pid}")
+                    os.kill(pid, signal.SIGCONT)
+                    self.logger.info(f"Sent SIGCONT to child process {pid}")
                 except (ProcessLookupError, PermissionError) as e:
-                    self.logger.warning(f"Failed to send SIGCONT to main process {process_pid}: {str(e)}")
+                    self.logger.warning(f"Failed to send SIGCONT to child process {pid}: {str(e)}")
 
-            except Exception as e:
-                self.logger.error(f"Error resuming process: {str(e)}")
-                # 即使进程恢复失败，我们也继续恢复线程
+            # 恢复主进程
+            try:
+                os.kill(process_pid, signal.SIGCONT)
+                self.logger.info(f"Sent SIGCONT to main process {process_pid}")
+            except (ProcessLookupError, PermissionError) as e:
+                self.logger.warning(f"Failed to send SIGCONT to main process {process_pid}: {str(e)}")
 
-            # 恢复任务线程
-            self.pause_events[task_id].set()  # 设置事件，解除线程阻塞
+        except Exception as e:
+            self.logger.error(f"Error resuming process: {str(e)}")
+            # 即使进程恢复失败，我们也继续恢复线程
 
-            # 更新执行记录
-            if task.get('last_execution_id'):
-                execution_id = task.get('last_execution_id')
-                record = self.history.get_execution_record(task_id, execution_id)
+        # 恢复任务线程 - 必须在锁外单独获取锁，因为涉及到共享的事件对象
+        with self.lock:
+            if task_id in self.pause_events:
+                self.pause_events[task_id].set()  # 设置事件，解除线程阻塞
 
-                if record:
-                    updates = {
-                        'status': 'running',
-                        'logs': record['logs'] + "\nTask was resumed manually. Process execution continued."
-                    }
-                    self.history.update_execution_record(task_id, execution_id, updates)
-
-            self.logger.info(f"Task {task_id} resumed successfully")
-
-            return {
-                "success": True,
-                "message": "Task resumed successfully",
-                "task": {
-                    "task_id": task_id,
-                    "task_name": task.get('task_name'),
-                    "status": 'running',
-                    "previous_status": previous_status
+        # 更新执行记录 - 锁外执行
+        if execution_id:
+            record = self.history.get_execution_record(task_id, execution_id)
+            if record:
+                updates = {
+                    'status': 'running',
+                    'logs': record['logs'] + "\nTask was resumed manually. Process execution continued."
                 }
+                self.history.update_execution_record(task_id, execution_id, updates)
+
+        self.logger.info(f"Task {task_id} resumed successfully")
+
+        return {
+            "success": True,
+            "message": "Task resumed successfully",
+            "task": {
+                "task_id": task_id,
+                "task_name": task.get('task_name') if task else None,
+                "status": 'running',
+                "previous_status": previous_status
             }
+        }
 
     def _get_child_processes(self, parent_pid):
         """获取一个进程的所有子进程PID

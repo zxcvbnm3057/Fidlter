@@ -174,7 +174,6 @@ command: 启动命令（可选，默认为"python main.py"）
       "task_id": 1,
       "task_name": "任务名称",
       "status": "completed",
-      "script_path": "脚本内容",
       "conda_env": "环境名称",
       "created_at": "创建时间",
       "cron_expression": "*/10 * * * *",
@@ -187,7 +186,6 @@ command: 启动命令（可选，默认为"python main.py"）
       "task_id": 2,
       "task_name": "一次性任务",
       "status": "scheduled",
-      "script_path": "脚本内容",
       "conda_env": "环境名称",
       "created_at": "创建时间",
       "cron_expression": null,
@@ -283,6 +281,136 @@ command: 启动命令（可选，默认为"python main.py"）
 - `execution_history` 包含任务的所有执行记录
 - `performance_metrics` 提供绘制性能图表所需的数据
 - `latest_execution` 包含最近一次执行的完整详情，包括执行日志
+
+## 获取任务执行日志
+
+**请求**:
+
+- 方法: `GET`
+- URL: `/api/tasks/<task_id>/executions/<execution_id>/logs`
+- 支持查询参数: 
+  - `stream=true` (实时获取最新日志)
+  - `include_stdout=true` (包含标准输出，默认为true)
+  - `include_stderr=true` (包含标准错误，默认为true)
+
+**参数说明**:
+
+- `task_id`: 必填，任务的唯一标识ID
+- `execution_id`: 必填，执行的唯一标识ID
+- `stream`: 可选，布尔值，指示是否使用流式API获取实时日志，默认为false
+- `include_stdout`: 可选，布尔值，指示是否包含标准输出日志，默认为true
+- `include_stderr`: 可选，布尔值，指示是否包含标准错误日志，默认为true
+
+**响应**:
+
+- 状态码: 200 (成功)
+- 内容:
+  ```json
+  {
+    "success": true,
+    "task_id": 1,
+    "execution_id": "执行ID",
+    "logs": "任务执行的详细日志内容...",
+    "stdout": "标准输出内容...",
+    "stderr": "标准错误内容...",
+    "is_complete": false,         // 任务是否已完成
+    "last_update": "2025-05-03 10:45:32"  // 日志最后更新时间
+  }
+  ```
+
+  如果是流式传输的JSON响应格式:
+  ```json
+  {"logs": "调用前的完整历史日志...", "stdout": "历史标准输出...", "stderr": "历史标准错误...", "is_complete": false}
+  {"logs": "新日志...", "stdout": "新标准输出...", "stderr": "新标准错误...", "is_complete": false}
+  {"logs": "新日志...", "stdout": "新标准输出...", "stderr": "新标准错误...", "is_complete": false}
+  {"logs": "新日志...", "stdout": "新标准输出...", "stderr": "新标准错误...", "is_complete": true}
+  ```
+
+- 状态码: 404 (任务或执行ID不存在)
+- 内容:
+  ```json
+  {
+    "success": false,
+    "message": "Task execution with ID not found"
+  }
+  ```
+
+- 状态码: 500 (内部服务器错误)
+- 内容:
+  ```json
+  {
+    "success": false,
+    "message": "Failed to retrieve logs",
+    "error": "详细错误信息"
+  }
+  ```
+
+**说明**:
+- 此接口用于获取特定任务执行的日志内容
+- 第一次调用时返回完整历史日志，不会丢失任何历史内容
+- 当使用 `stream=true` 参数时，采用流式返回，第一个响应包含完整历史记录，后续响应包含增量更新
+- 可以通过 `include_stdout` 和 `include_stderr` 参数控制是否包含标准输出和标准错误
+- 标准输出和标准错误分别存储在 `stdout` 和 `stderr` 字段中，而 `logs` 字段包含完整的组合日志
+- 对于正在运行的任务，前端也可以通过定期轮询此接口(设置`stream=false`或留空)来实现日志的实时更新
+- `is_complete` 字段指示任务是否已完成执行，可用于决定前端是否需要继续轮询获取更新
+- 系统将确保无论是流式传输还是轮询方式，日志都不会丢失，始终能获取完整的执行历史
+
+## 手动触发任务
+
+**请求**:
+
+- 方法: `POST`
+- URL: `/api/tasks/<task_id>/trigger`
+- Cookie: `session=<会话ID>`
+
+**参数说明**:
+
+- `task_id`: 必填，需要触发的任务的唯一标识ID
+
+**响应**:
+
+- 状态码: 200 (成功)
+- 内容: 触发结果
+
+  ```json
+  {
+    "success": true,
+    "message": "Task triggered successfully",
+    "task": {
+      "task_id": 1,
+      "task_name": "任务名称",
+      "status": "running",
+      "previous_status": "scheduled"
+    }
+  }
+  ```
+- 状态码: 400 (任务不能被触发)
+- 内容:
+
+  ```json
+  {
+    "success": false,
+    "message": "Task cannot be triggered",
+    "error": "Cannot trigger a task with status: 'running'",
+    "current_status": "running"
+  }
+  ```
+- 状态码: 404 (任务不存在)
+- 内容:
+
+  ```json
+  {
+    "success": false,
+    "message": "Task with ID 1 not found"
+  }
+  ```
+
+**说明**:
+
+- 此接口用于手动触发任务的立即执行
+- 可以触发状态为"scheduled"、"paused"或"stopped"的任务
+- 触发后任务状态将变为"running"
+- 对于定时任务，手动触发不会影响其调度规则，下次仍会按原定时间执行
 
 ## 停止任务
 
@@ -626,43 +754,6 @@ command: 启动命令（可选，默认为"python main.py"）
 
 - 该接口可能使用 `TaskScheduler`类中的 `task_history`字典和 `clean_old_task_history`方法的逻辑
 - 返回的历史记录已自动过滤为仅包含最近一个月的数据
-
-## 获取任务执行日志
-
-**请求**:
-
-- 方法: `GET`
-- URL: `/api/tasks/<task_id>/executions/<execution_id>/logs`
-- 支持查询参数: `real_time=true` (实时获取最新日志)
-
-**响应**:
-
-- 状态码: 200 (成功)
-- 内容:
-  ```json
-  {
-    "success": true,
-    "task_id": 1,
-    "execution_id": "执行ID",
-    "logs": "任务执行的详细日志内容...",
-    "is_complete": false,         // 任务是否已完成
-    "last_update": "2025-05-03 10:45:32"  // 日志最后更新时间
-  }
-  ```
-
-- 状态码: 404 (任务或执行ID不存在)
-- 内容:
-  ```json
-  {
-    "success": false,
-    "message": "Task execution with ID not found"
-  }
-  ```
-
-**说明**:
-- 此接口用于获取特定任务执行的日志内容
-- 当使用`real_time=true`参数时，返回的是最新的日志内容，适用于监控正在运行的任务
-- `is_complete`字段指示任务是否已完成执行，可用于决定前端是否需要继续轮询获取更新
 
 ## 删除任务
 

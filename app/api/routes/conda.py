@@ -17,8 +17,8 @@ def list_conda_environments():
     # 检查是否请求流式响应
     stream = request.args.get('stream', 'false').lower() == 'true'
 
-    # 使用新的服务层方法获取格式化环境列表
-    result = conda_manager.get_formatted_environments(stream)
+    # 直接使用stats_manager获取格式化环境列表
+    result = conda_manager.stats_manager.get_formatted_environments(stream)
 
     # 判断是否成功获取环境列表
     if not result.get("success", False):
@@ -29,7 +29,6 @@ def list_conda_environments():
 
     # 处理流式响应
     if stream:
-
         def generate():
             # 对于空环境情况，生成器不会产生任何输出
             # 前端需要处理连接关闭但没有接收到数据的情况
@@ -53,7 +52,8 @@ def create_conda_environment():
     if not name:
         return jsonify({"success": False, "message": "Environment name is required"}), 400
 
-    result = conda_manager.create_environment(name, python_version, packages)
+    # 直接使用env_manager创建环境
+    result = conda_manager.env_manager.create_environment(name, python_version, packages)
     if result.get('success'):
         # 格式化为符合文档要求的响应
         return jsonify({
@@ -86,7 +86,8 @@ def create_conda_environment():
 @conda_routes.route('/environment/<env_name>', methods=['DELETE'])
 def delete_conda_environment(env_name):
     """删除指定的Conda环境"""
-    result = conda_manager.delete_environment(env_name)
+    # 直接使用env_manager删除环境
+    result = conda_manager.env_manager.delete_environment(env_name)
     if result.get('success'):
         return '', 204  # 文档规定删除成功返回204无内容
     else:
@@ -110,7 +111,8 @@ def update_conda_environment(env_name):
     if not new_name:
         return jsonify({"success": False, "message": "New name is required"}), 400
 
-    result = conda_manager.rename_environment(env_name, new_name)
+    # 直接使用env_manager重命名环境
+    result = conda_manager.env_manager.rename_environment(env_name, new_name)
     if result.get('success'):
         # 根据文档要求格式化返回结果
         return jsonify({
@@ -140,7 +142,8 @@ def install_packages(env_name):
     if not packages:
         return jsonify({"success": False, "message": "No packages specified"}), 400
 
-    result = conda_manager.install_packages(env_name, packages)
+    # 直接使用package_manager安装包
+    result = conda_manager.package_manager.install_packages(env_name, packages)
     if result.get('success'):
         # 根据文档要求格式化返回结果
         return jsonify({
@@ -178,7 +181,8 @@ def remove_packages(env_name):
     if not packages:
         return jsonify({"success": False, "message": "No packages specified"}), 400
 
-    result = conda_manager.remove_packages(env_name, packages)
+    # 直接使用package_manager移除包
+    result = conda_manager.package_manager.remove_packages(env_name, packages)
     if result.get('success'):
         # 根据文档要求格式化返回结果
         return jsonify({
@@ -208,7 +212,8 @@ def remove_packages(env_name):
 def get_conda_stats():
     """获取Conda环境统计信息"""
     try:
-        stats_result = conda_manager.get_environment_stats()
+        # 直接使用stats_manager获取统计信息
+        stats_result = conda_manager.stats_manager.get_environment_stats()
         if stats_result.get("success", False):
             # 移除total_disk_usage和package_stats字段，前端将从环境列表计算
             stats = stats_result.get("output", {})
@@ -230,7 +235,8 @@ def get_conda_stats():
 def get_conda_environment_details(env_name):
     """获取特定Conda环境的详细信息"""
     try:
-        details_result = conda_manager.get_environment_details(env_name)
+        # 直接使用stats_manager获取环境详细信息
+        details_result = conda_manager.stats_manager.get_environment_details(env_name)
         if details_result.get("success", False):
             return jsonify(details_result.get("output", {}))
         else:
@@ -255,7 +261,8 @@ def get_conda_environment_details(env_name):
 def get_conda_environment_extended_info(env_name):
     """获取环境的扩展信息（包括磁盘使用量和包数量）"""
     try:
-        result = conda_manager.get_environment_extended_info(env_name)
+        # 直接使用stats_manager获取扩展信息
+        result = conda_manager.stats_manager.get_environment_extended_info(env_name)
         if result.get("success", False):
             return jsonify(result.get("output", {}))
         else:
@@ -278,7 +285,8 @@ def get_conda_environment_extended_info(env_name):
 def get_python_versions():
     """获取可用的Python版本列表"""
     try:
-        result = conda_manager.get_available_python_versions()
+        # 直接使用stats_manager获取Python版本
+        result = conda_manager.stats_manager.get_available_python_versions()
         if result.get("success", False):
             # 直接返回结果的output部分
             return jsonify(result.get("output", {}))

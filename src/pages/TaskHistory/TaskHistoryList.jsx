@@ -5,10 +5,11 @@ import {
     CCardBody,
     CCardHeader,
     CBadge,
-    CButton
+    CButton,
+    CTooltip
 } from '@coreui/react';
 import CIcon from '@coreui/icons-react';
-import { cilFilter } from '@coreui/icons';
+import { cilFilter, cilInfo, cilList } from '@coreui/icons';
 import { DataTable, EmptyState, TableFilterBar } from '../../components/common';
 
 // 定义状态优先级，用于排序，与任务列表保持一致
@@ -232,6 +233,35 @@ const TaskHistoryList = ({ taskHistory, onFilter, currentFilter = 'all' }) => {
             key: 'duration',
             title: '执行时长',
             dataIndex: 'duration'
+        },
+        {
+            key: 'actions',
+            title: '操作',
+            render: (_, record) => (
+                <div className="d-flex">
+                    <CTooltip content="查看详情">
+                        <CButton
+                            color="primary"
+                            size="sm"
+                            className="me-1"
+                            onClick={() => navigate(`/task-detail/${record.task_id}`)}
+                        >
+                            <CIcon icon={cilInfo} />
+                        </CButton>
+                    </CTooltip>
+
+                    <CTooltip content="查看日志">
+                        <CButton
+                            color="info"
+                            size="sm"
+                            onClick={() => navigate(`/task-detail/${record.task_id}?showLogs=true&executionId=${record.execution_id}`)}
+                        >
+                            <CIcon icon={cilList} />
+                        </CButton>
+                    </CTooltip>
+                </div>
+            ),
+            width: '120px'
         }
     ];
 
@@ -289,7 +319,7 @@ const TaskHistoryList = ({ taskHistory, onFilter, currentFilter = 'all' }) => {
                     sortDirection={sortDirection}
                     onSort={handleSort}
                     onRowClick={handleRowClick}
-                    rowClassName="cursor-pointer hover-highlight"
+                    rowClassName={() => "cursor-pointer hover-highlight"}
                     emptyText={emptyContent}
                     rowKey="task_id"
                     className="border-top"

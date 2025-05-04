@@ -7,7 +7,8 @@ import {
     stopTaskRequest,
     pauseTaskRequest,
     resumeTaskRequest,
-    fetchTaskStatsRequest
+    fetchTaskStatsRequest,
+    triggerTaskRequest
 } from '../redux/tasks/reducer';
 import { fetchEnvironmentsRequest } from '../redux/conda/reducer';
 import { CAlert, CSpinner, CNav, CNavItem, CNavLink, CTabContent, CTabPane } from '@coreui/react';
@@ -42,19 +43,10 @@ const TaskSchedulerPage = () => {
         setStatusFilter(filter);
     };
 
-    const handleSubmit = (data) => {
-        const taskData = {
-            task_name: data.taskName,
-            condaEnv: data.condaEnv,
-            script: data.scriptPath,
-            scheduleType: data.scheduleType,
-            cronExpression: data.cronExpression,
-            scheduledDate: data.scheduledDate,
-            scheduledTime: data.scheduledTime
-        };
-
-        // 分发创建任务请求action
-        dispatch(createTaskRequest(taskData));
+    // 处理表单提交 - 直接传递FormData对象
+    const handleSubmit = (formData) => {
+        // 分发创建任务请求action，直接传递FormData对象
+        dispatch(createTaskRequest(formData));
     };
 
     const handleStopTask = async (taskId) => {
@@ -74,6 +66,13 @@ const TaskSchedulerPage = () => {
     const handleResumeTask = async (taskId) => {
         // 分发恢复任务请求action
         dispatch(resumeTaskRequest({ taskId }));
+    };
+
+    const handleTriggerTask = async (taskId) => {
+        if (!window.confirm('确定要立即执行这个任务吗？')) return;
+
+        // 分发触发任务请求action
+        dispatch(triggerTaskRequest({ taskId }));
     };
 
     if (tasksLoading && taskList.length === 0 && environments.length === 0) {
@@ -135,6 +134,7 @@ const TaskSchedulerPage = () => {
                 onStopTask={handleStopTask}
                 onPauseTask={handlePauseTask}
                 onResumeTask={handleResumeTask}
+                onTriggerTask={handleTriggerTask}
                 initialFilterStatus={statusFilter} // 传递初始筛选状态
                 onFilterChange={setStatusFilter} // 传递筛选状态更新函数
             />

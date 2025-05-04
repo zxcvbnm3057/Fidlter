@@ -41,7 +41,12 @@ const TaskForm = ({ environments, onSubmit, loading }) => {
             cronExpression: '',
             scheduledDate: '',
             scheduledTime: '',
-            command: ''
+            command: '',
+            priority: 'normal',
+            memoryLimit: '',
+            retryCount: 0,
+            timeoutMinutes: 0,
+            environmentVars: ''
         }
     });
 
@@ -104,6 +109,12 @@ const TaskForm = ({ environments, onSubmit, loading }) => {
     };
 
     const handleFormSubmit = (data) => {
+        // 验证文件是否选择
+        if (!selectedFile) {
+            alert('请上传脚本文件');
+            return;
+        }
+
         // 创建FormData对象用于文件上传
         const formData = new FormData();
 
@@ -129,17 +140,32 @@ const TaskForm = ({ environments, onSubmit, loading }) => {
         // 添加文件
         if (selectedFile) {
             formData.append('script_file', selectedFile);
-
-            // 如果是ZIP文件且有自定义命令
-            if (isZipFile && data.command) {
-                formData.append('command', data.command);
-            }
         }
 
-        // 验证文件是否选择
-        if (!selectedFile) {
-            alert('请上传脚本文件');
-            return;
+        // 如果是ZIP文件且有自定义命令
+        if (isZipFile && data.command) {
+            formData.append('command', data.command);
+        }
+
+        // 添加高级选项
+        if (data.priority && data.priority !== 'normal') {
+            formData.append('priority', data.priority);
+        }
+
+        if (data.memoryLimit) {
+            formData.append('memory_limit', data.memoryLimit);
+        }
+
+        if (data.retryCount > 0) {
+            formData.append('retry_count', data.retryCount);
+        }
+
+        if (data.timeoutMinutes > 0) {
+            formData.append('timeout_minutes', data.timeoutMinutes);
+        }
+
+        if (data.environmentVars) {
+            formData.append('environment_vars', data.environmentVars);
         }
 
         // 提交表单数据
@@ -153,6 +179,11 @@ const TaskForm = ({ environments, onSubmit, loading }) => {
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
         }
+    };
+
+    // 关闭高级选项模态框
+    const handleModalClose = () => {
+        setAdvancedVisible(false);
     };
 
     // 预设的常用cron表达式
@@ -427,14 +458,14 @@ const TaskForm = ({ environments, onSubmit, loading }) => {
             </CCard>
 
             {/* 高级选项模态框 */}
-            <CModal visible={advancedVisible} onClose={() => setAdvancedVisible(false)}>
+            <CModal visible={advancedVisible} onClose={handleModalClose}>
                 <CModalHeader>
                     <CModalTitle>任务高级选项</CModalTitle>
                 </CModalHeader>
                 <CModalBody>
                     <div className="mb-3">
                         <CFormLabel>任务优先级</CFormLabel>
-                        <CFormSelect>
+                        <CFormSelect {...register('priority')}>
                             <option value="normal">正常</option>
                             <option value="high">高</option>
                             <option value="low">低</option>
@@ -442,26 +473,26 @@ const TaskForm = ({ environments, onSubmit, loading }) => {
                     </div>
                     <div className="mb-3">
                         <CFormLabel>内存限制 (MB)</CFormLabel>
-                        <CFormInput type="number" placeholder="不限制请留空" />
+                        <CFormInput type="number" placeholder="不限制请留空" {...register('memoryLimit')} />
                     </div>
                     <div className="mb-3">
                         <CFormLabel>失败重试次数</CFormLabel>
-                        <CFormInput type="number" min="0" max="3" defaultValue="0" />
+                        <CFormInput type="number" min="0" max="3" defaultValue="0" {...register('retryCount')} />
                     </div>
                     <div className="mb-3">
                         <CFormLabel>超时时间 (分钟)</CFormLabel>
-                        <CFormInput type="number" min="0" placeholder="0 表示不限制" defaultValue="0" />
+                        <CFormInput type="number" min="0" placeholder="0 表示不限制" defaultValue="0" {...register('timeoutMinutes')} />
                     </div>
                     <div className="mb-3">
                         <CFormLabel>环境变量</CFormLabel>
-                        <CFormInput type="text" placeholder="KEY=VALUE,KEY2=VALUE2" />
+                        <CFormInput type="text" placeholder="KEY=VALUE,KEY2=VALUE2" {...register('environmentVars')} />
                     </div>
                 </CModalBody>
                 <CModalFooter>
-                    <CButton color="secondary" onClick={() => setAdvancedVisible(false)}>
+                    <CButton color="secondary" onClick={handleModalClose}>
                         取消
                     </CButton>
-                    <CButton color="primary" onClick={() => setAdvancedVisible(false)}>
+                    <CButton color="primary" onClick={handleModalClose}>
                         确定
                     </CButton>
                 </CModalFooter>

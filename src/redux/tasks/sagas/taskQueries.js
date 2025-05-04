@@ -19,8 +19,9 @@ export function* fetchTasksSaga(action) {
     try {
         // 使用action中的type参数，默认为defined
         const type = action.payload?.type || 'defined';
-        const data = yield call(taskService.getTasks, type);
-        yield put(fetchTasksSuccess(data));
+        // API直接返回任务数组，不需要额外处理
+        const tasks = yield call(taskService.getTasks, type);
+        yield put(fetchTasksSuccess(tasks));
     } catch (error) {
         yield put(fetchTasksFailure(error.message || '获取任务列表失败'));
     }
@@ -61,13 +62,31 @@ export function* fetchTaskDetailsSaga(action) {
 // 获取任务执行日志
 export function* fetchTaskLogsSaga(action) {
     try {
-        const { taskId, executionId, realTime, pollInterval } = action.payload;
-        const data = yield call(taskService.getTaskExecutionLogs, taskId, executionId, realTime);
+        const {
+            taskId,
+            executionId,
+            realTime,
+            pollInterval,
+            includeStdout = true,
+            includeStderr = true
+        } = action.payload;
 
+        // 使用新的参数格式调用服务
+        const options = {
+            stream: realTime,
+            includeStdout,
+            includeStderr
+        };
+
+        const data = yield call(taskService.getTaskExecutionLogs, taskId, executionId, options);
+
+        // 包含新增的stdout和stderr字段
         yield put(fetchTaskLogsSuccess({
             taskId,
             executionId,
             logs: data.logs,
+            stdout: data.stdout,
+            stderr: data.stderr,
             isComplete: data.is_complete
         }));
 

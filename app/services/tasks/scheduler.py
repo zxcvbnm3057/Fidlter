@@ -424,3 +424,65 @@ class Scheduler:
         self.running = False
         if self.scheduler_thread.is_alive():
             self.scheduler_thread.join(timeout=5)
+
+    def trigger_task(self, task_id):
+        """手动触发任务立即执行
+        
+        参数:
+            task_id: 要触发的任务ID
+            
+        返回:
+            包含操作结果的字典
+        """
+        # 查找任务
+        task = self.repository.get_task(task_id)
+        if not task:
+            return {"success": False, "message": f"Task with ID {task_id} not found"}
+
+        # 检查任务状态
+        if task['status'] == 'running':
+            return {
+                "success": False,
+                "message": "Task cannot be triggered",
+                "error": f"Cannot trigger a task with status: '{task['status']}'",
+                "current_status": task['status']
+            }
+
+        previous_status = task['status']
+
+        # 如果任务是停止或暂停状态，先将其状态改为scheduled
+        if task['status'] in ['stopped', 'paused']:
+            self.repository.update_task(task_id, {'status': 'scheduled'})
+
+        # 立即执行任务
+        execution_result = self.executor.execute_task(task)
+
+        # 处理执行结果 - 防止字符串错误
+        execution_id = None
+        if execution_result:
+            # 确保 execution_result 是字典类型
+            if isinstance(execution_result, dict):
+                if execution_result.get("success", False):
+                    execution_id = execution_result.get("execution_id")
+            else:
+                # 记录异常情况
+                self.logger.error(
+                    f"Unexpected execution_result type: {type(execution_result)}, value: {execution_result}")
+
+        # 如果任务有cron表达式，更新下一次执行时间
+        if task.get('cron_expression'):
+            next_run_time = self.calculator.recalculate_next_run_time(task['cron_expression'])
+            if next_run_time:
+                self.repository.update_task(task_id, {'next_run_time': next_run_time})
+
+        return {
+            "success": True,
+            "message": "Task triggered successfully",
+            "task": {
+                "task_id": task_id,
+                "task_name": task.get('task_name'),
+                "status": 'running',
+                "previous_status": previous_status,
+                "execution_id": execution_id
+            }
+        }

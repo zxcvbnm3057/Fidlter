@@ -80,6 +80,27 @@ const tasksSlice = createSlice({
             state.error = action.payload;
         },
 
+        // 手动触发任务请求
+        triggerTaskRequest: (state) => {
+            state.loading = true;
+            state.error = null;
+        },
+        // 手动触发任务成功
+        triggerTaskSuccess: (state, action) => {
+            state.loading = false;
+            // 更新任务状态为running
+            state.taskList = state.taskList.map(task =>
+                task.task_id === action.payload.taskId
+                    ? { ...task, status: 'running' }
+                    : task
+            );
+        },
+        // 手动触发任务失败
+        triggerTaskFailure: (state, action) => {
+            state.loading = false;
+            state.error = action.payload;
+        },
+
         // 停止任务请求
         stopTaskRequest: (state) => {
             state.loading = true;
@@ -88,10 +109,10 @@ const tasksSlice = createSlice({
         // 停止任务成功
         stopTaskSuccess: (state, action) => {
             state.loading = false;
-            // 更新任务状态为disabled，与禁用任务效果相同
+            // 更新任务状态为stopped
             state.taskList = state.taskList.map(task =>
                 task.task_id === action.payload.taskId
-                    ? { ...task, status: 'disabled' }
+                    ? { ...task, status: 'stopped' }
                     : task
             );
         },
@@ -166,13 +187,15 @@ const tasksSlice = createSlice({
         },
         // 获取任务执行日志成功
         fetchTaskLogsSuccess: (state, action) => {
-            const { taskId, executionId, logs, isComplete } = action.payload;
+            const { taskId, executionId, logs, stdout, stderr, isComplete } = action.payload;
             // 使用嵌套结构存储日志
             if (!state.taskLogs[taskId]) {
                 state.taskLogs[taskId] = {};
             }
             state.taskLogs[taskId][executionId] = {
                 logs,
+                stdout,
+                stderr,
                 isComplete,
                 lastUpdated: new Date().toISOString()
             };
@@ -244,6 +267,9 @@ export const {
     createTaskRequest,
     createTaskSuccess,
     createTaskFailure,
+    triggerTaskRequest,
+    triggerTaskSuccess,
+    triggerTaskFailure,
     stopTaskRequest,
     stopTaskSuccess,
     stopTaskFailure,

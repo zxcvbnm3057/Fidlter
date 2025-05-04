@@ -15,30 +15,82 @@ import {
     deleteTaskSuccess,
     deleteTaskFailure,
     updateTaskSuccess,
-    updateTaskFailure
+    updateTaskFailure,
+    triggerTaskSuccess,
+    triggerTaskFailure
 } from '../reducer';
 
 // 创建任务
 export function* createTaskSaga(action) {
     try {
-        // FormData对象已经在TaskForm组件中创建
-        // 直接使用taskService发送请求
-        const data = yield call(taskService.createTask, action.payload);
+        // 检查是否是FormData对象
+        if (action.payload instanceof FormData) {
+            // 直接使用FormData对象发送请求
+            const data = yield call(taskService.createTask, action.payload);
 
-        // 处理响应
-        if (data.success) {
-            yield put(createTaskSuccess(data.task || data));
-            // 创建成功后重新获取任务列表
-            yield put(fetchTasksRequest());
+            // 处理响应
+            if (data.success) {
+                yield put(createTaskSuccess(data.task || data));
+                // 创建成功后重新获取任务列表
+                yield put(fetchTasksRequest());
+            } else {
+                yield put(createTaskFailure(data.message || '创建任务失败'));
+            }
         } else {
-            yield put(createTaskFailure(data.message || '创建任务失败'));
+            // 对于旧格式的数据，进行转换处理
+            const taskData = { ...action.payload };
+            const apiTaskData = {};
+
+            // 设置任务名称
+            if (taskData.taskName) {
+                apiTaskData.task_name = taskData.taskName;
+            }
+
+            // 设置脚本路径
+            if (taskData.scriptPath) {
+                apiTaskData.script = taskData.scriptPath;
+            } else if (taskData.script) {
+                apiTaskData.script = taskData.script;
+            }
+
+            // 设置Conda环境
+            if (taskData.condaEnv) {
+                apiTaskData.conda_env = taskData.condaEnv;
+            }
+
+            // 处理调度选项
+            if (taskData.scheduleType === 'once' && taskData.scheduledDate && taskData.scheduledTime) {
+                // 一次性延迟执行
+                const scheduledDateTime = new Date(`${taskData.scheduledDate}T${taskData.scheduledTime}`);
+                const now = new Date();
+                const delaySeconds = Math.floor((scheduledDateTime - now) / 1000);
+
+                if (delaySeconds > 0) {
+                    apiTaskData.delay_seconds = delaySeconds;
+                }
+            } else if (taskData.scheduleType === 'cron' && taskData.cronExpression) {
+                // 直接使用cron表达式
+                apiTaskData.cron_expression = taskData.cronExpression;
+            }
+
+            // 使用taskService发送正确格式的请求
+            const data = yield call(taskService.createTask, apiTaskData);
+
+            // 处理响应
+            if (data.success) {
+                yield put(createTaskSuccess(data.task || data));
+                // 创建成功后重新获取任务列表
+                yield put(fetchTasksRequest());
+            } else {
+                yield put(createTaskFailure(data.message || '创建任务失败'));
+            }
         }
     } catch (error) {
         // 根据API文档处理特定错误
         if (error.response?.status === 400) {
-            if (error.response.data.message.includes('already exists')) {
+            if (error.response.data.message?.includes('already exists')) {
                 yield put(createTaskFailure('任务名称已存在'));
-            } else if (error.response.data.message.includes('cron expression')) {
+            } else if (error.response.data.message?.includes('cron expression')) {
                 yield put(createTaskFailure('Cron表达式无效'));
             } else {
                 yield put(createTaskFailure(error.response.data.message || '创建任务失败'));
@@ -46,6 +98,30 @@ export function* createTaskSaga(action) {
         } else {
             yield put(createTaskFailure(error.message || '创建任务失败'));
         }
+    }
+}
+
+// 手动触发任务
+export function* triggerTaskSaga(action) {
+    try {
+        const taskId = action.payload.taskId;
+        // 使用taskService触发任务
+        const data = yield call(taskService.triggerTask, taskId);
+
+        if (data.success) {
+            yield put(triggerTaskSuccess({ taskId }));
+        } else {
+            yield put(triggerTaskFailure(data.message || '触发任务失败'));
+        }
+
+        // 无论成功与否，都重新获取任务列表
+        yield put(fetchTasksRequest());
+        // 更新任务统计信息
+        yield put(fetchTaskStatsRequest());
+    } catch (error) {
+        yield put(triggerTaskFailure(error.message || '触发任务失败'));
+        // 仍需重新获取任务列表以保持UI同步
+        yield put(fetchTasksRequest());
     }
 }
 
